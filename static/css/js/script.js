@@ -91,7 +91,52 @@ function validateMatch() {
 
     window.location.href = url;
 }
+function validateMatch2() {
 
+    const host = document.getElementById("hostTeam");
+    const visitor = document.getElementById("visitorTeam");
+    const overs = document.getElementById("overs");
+
+    const toss = document.querySelector('input[name="toss"]:checked');
+    const opt = document.querySelector('input[name="opt"]:checked');
+
+    if (!host.value.trim()) {
+        host.focus();
+        alert("Enter Host Team");
+        return;
+    }
+
+    if (!visitor.value.trim()) {
+        visitor.focus();
+        alert("Enter Visitor Team");
+        return;
+    }
+
+    if (!toss) {
+        alert("Select Toss Winner");
+        return;
+    }
+
+    if (!opt) {
+        alert("Select Bat or Bowl");
+        return;
+    }
+
+    if (!overs.value) {
+        overs.focus();
+        alert("Enter Overs");
+        return;
+    }
+
+    const url =
+    `/save-match-2?host=${encodeURIComponent(host.value)}`
+    + `&visitor=${encodeURIComponent(visitor.value)}`
+    + `&toss=${toss.value}`
+    + `&opt=${opt.value}`
+    + `&overs=${overs.value}`;
+
+    window.location.href = url;
+}
 function validateOpening() {
 
     const striker = document.getElementById("striker");
@@ -121,7 +166,37 @@ function validateOpening() {
 
     window.location.href = url;
 }
+function validateOpening2() {
 
+    const striker = document.getElementById("striker");
+    const nonStriker = document.getElementById("nonStriker");
+    const bowler = document.getElementById("bowler");
+
+    if (!striker.value.trim()) {
+        striker.focus();
+        alert("Enter Striker Name");
+        return;
+    }
+
+    if (!nonStriker.value.trim()) {
+        nonStriker.focus();
+        alert("Enter Non-Striker Name");
+        return;
+    }
+
+    if (!bowler.value.trim()) {
+        bowler.focus();
+        alert("Enter Bowler Name");
+        return;
+    }
+
+    const url =
+    `/save-opening-2?striker=${encodeURIComponent(striker.value)}`
+    + `&nonStriker=${encodeURIComponent(nonStriker.value)}`
+    + `&bowler=${encodeURIComponent(bowler.value)}`;
+
+    window.location.href = url;
+}
 function saveSettings() {
 
     const players = document.querySelector('[name="players"]').value;
@@ -309,6 +384,33 @@ if (page.includes("live-match") || page.includes("match")) {
 
         updateCRR();
         updateRRR();
+
+        // Coming back here after confirming a wicket that ended the innings or the
+        // match (see addRun): show the screen that was postponed for it. This does NOT
+        // rely solely on the flag addRun set before leaving -- it also double-checks the
+        // freshly loaded score against the real limits, so the innings-break / result
+        // screen still appears correctly even if that flag was ever missing or wrong.
+        const params = new URLSearchParams(window.location.search);
+        const totalOversVal = parseInt(document.getElementById("oversData")?.innerText.trim()) || 0;
+        const maxWicketsVal = (parseInt(document.getElementById("playersData")?.innerText.trim()) || 11) - 1;
+        const inningsVal = document.getElementById("inningsData")?.innerText.trim();
+
+        if (params.get("inningsBreak")) {
+            const target = parseInt(localStorage.getItem("inningsEndTarget")) || (score + 1);
+            const overs = parseInt(localStorage.getItem("inningsEndOvers")) || totalOversVal;
+            localStorage.removeItem("inningsEndTarget");
+            localStorage.removeItem("inningsEndOvers");
+            openInningsModal(target, overs);
+        } else if (params.get("matchResult")) {
+            const text = localStorage.getItem("pendingResultText");
+            localStorage.removeItem("pendingResultText");
+            if (text) finishMatch(text);
+            else checkMatchResult();
+        } else if (inningsVal == "1" && (wickets >= maxWicketsVal || (over * 6 + ball) >= totalOversVal * 6)) {
+            openInningsModal(score + 1, totalOversVal);
+        } else if (inningsVal == "2") {
+            checkMatchResult();
+        }
     };
     function isMaidenOver(overArr) {
 
@@ -331,492 +433,120 @@ if (page.includes("live-match") || page.includes("match")) {
     }
     
     window.addRun = function (run) {
+        // All cricket rules live in scoring-engine.js (tested separately with
+        // `node test-engine.js`). This function only reads the current page
+        // state, asks the engine what happens, writes the result back into
+        // the same globals the rest of the file already uses, then saves.
+        const flags = {
+            run,
+            wide: document.getElementById("wide").checked,
+            noball: document.getElementById("noball").checked,
+            byes: document.getElementById("byes").checked,
+            legbyes: document.getElementById("legbyes").checked,
+            wicket: document.getElementById("wicket").checked
+        };
+        const outPlayer = striker; // the batter facing this ball, before anything changes
 
-        const wide = document.getElementById("wide").checked;
-        const noball = document.getElementById("noball").checked;
-        const byes = document.getElementById("byes").checked;
-        const legbyes = document.getElementById("legbyes").checked;
-        const wicket = document.getElementById("wicket").checked;
+        const before = {
+            score, wickets, over, ball, striker, nonStriker,
+            sRuns: strikerRuns, sBalls: strikerBalls, s4: striker4, s6: striker6,
+            nsRuns: nonStrikerRuns, nsBalls: nonStrikerBalls, ns4: nonStriker4, ns6: nonStriker6,
+            bRuns: bowlerRuns, bBalls: bowlerBalls, bMaiden: bowlerMaiden, thisOver,
+            extras: { total: extraTotal, lb: extraLB, b: extraB, wd: extraWD, nb: extraNB },
+            partnerships, fow: fallOfWickets,
+            maxWickets: (parseInt(document.getElementById("playersData")?.innerText.trim()) || 11) - 1,
+            totalOvers: parseInt(document.getElementById("oversData")?.innerText.trim()) || 0
+        };
+        const { state: n, out } = KCLEngine.applyBall(before, flags);
 
-        // 🔴 WICKET
-        if (wicket) {
+        score = n.score; wickets = n.wickets; over = n.over; ball = n.ball;
+        striker = n.striker; nonStriker = n.nonStriker;
+        strikerRuns = n.sRuns; strikerBalls = n.sBalls; striker4 = n.s4; striker6 = n.s6;
+        nonStrikerRuns = n.nsRuns; nonStrikerBalls = n.nsBalls; nonStriker4 = n.ns4; nonStriker6 = n.ns6;
+        bowlerRuns = n.bRuns; bowlerBalls = n.bBalls; bowlerMaiden = n.bMaiden; thisOver = n.thisOver;
+        extraTotal = n.extras.total; extraLB = n.extras.lb; extraB = n.extras.b; extraWD = n.extras.wd; extraNB = n.extras.nb;
+        partnerships = n.partnerships; fallOfWickets = n.fow;
+        resetChecks();
 
-            let outPlayer = striker;
-
-            strikerRuns += run;
-            strikerBalls++;
-
-            let sr = strikerBalls === 0 ? 0 : ((strikerRuns / strikerBalls) * 100).toFixed(2);
-
-            let outData = `${outPlayer}=${strikerRuns},${strikerBalls},${striker4},${striker6},${sr}`;
-
-            score += run;
-            
-            if (ball < 6) {
-                ball++;
-            }
-            wickets++;
-            // 🔥 FALL OF WICKET SAVE
-
-            fallOfWickets.push({
-                player: outPlayer,
-                run: score,
-                wicket: wickets,
-                over: `${over}.${ball}`
-            });
-            bowlerBalls++;
-
-            overRuns += run;
-            thisOver.push("W");
-
-            // 🔥 RESET PARTNERSHIP
-            pRuns = 0;
-            pBalls = 0;
-            // 🔥 START NEW PARTNERSHIP (NEW BATSMAN আসার পর)
-            setTimeout(() => {
-                partnerships.push({
-                    striker: "",   // temporary
-                    nonStriker: nonStriker,
-                    runs: 0,
-                    balls: 0
-                });
-            }, 300);
-            let innings = document.getElementById("inningsData")?.innerText.trim();
-
-            let totalOvers = parseInt(document.getElementById("oversData")?.innerText.trim()) || 0;
-            let players = parseInt(document.getElementById("playersData")?.innerText.trim()) || 11;
-            let maxWickets = players - 1;
-
-            let totalBallsPlayed = over * 6 + ball;
-            let totalBallsMatch = totalOvers * 6;
-            let overEnded = false;
-            let finishedOver = thisOver.join(",");
-
-            if (ball >= 6) {
-
-                if (isMaidenOver(thisOver)) {
-                    bowlerMaiden++;
-                }
-
-                overRuns = 0;
-                thisOver = [];
-            
-                over++;
-                ball = 0;
-
-                overEnded = true;
-            }
-            let pSend = partnerships.length > 0 ? JSON.stringify(partnerships) : null;
-            fetch("/update-score", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    score, wickets, over, ball,
-
-                    striker, non_striker: nonStriker,
-
-                    s_runs: strikerRuns,
-                    s_balls: strikerBalls,
-                    s_4: striker4,
-                    s_6: striker6,
-
-                    ns_runs: nonStrikerRuns,
-                    ns_balls: nonStrikerBalls,
-                    ns_4: nonStriker4,
-                    ns_6: nonStriker6,
-
-                    b_runs: bowlerRuns,
-                    b_balls: bowlerBalls,
-                    b_wickets: bowlerWickets,
-                    b_maiden: bowlerMaiden,
-
-                    this_over: thisOver.join(","),
-                    finished_over: overEnded ? finishedOver : "",
-
-                    s_sr: strikerBalls === 0 ? 0 : ((strikerRuns / strikerBalls) * 100).toFixed(2),
-                    ns_sr: nonStrikerBalls === 0 ? 0 : ((nonStrikerRuns / nonStrikerBalls) * 100).toFixed(2),
-                    b_er: (bowlerBalls === 0) ? 0 : (bowlerRuns / (bowlerBalls / 6)).toFixed(2),
-
-                    out_player: outPlayer,
-                    out_stats: outData,
-                    over_ended: overEnded,
-                    wicket_type: localStorage.getItem("wicketType") || "pending",
-                    extra: `${extraTotal},${extraLB}LB,${extraB}B,${extraWD}WD,${extraNB}NB`,
-                    partnerships: pSend,
-                    fall_of_wickets: JSON.stringify(fallOfWickets)
-                })
-            }).then(() => {
-                 // 🔥 SECOND INNINGS RESULT CHECK FIRST
-                    if(innings == "2"){
-                        let ended = checkMatchResultDirect(score, wickets, over, ball);
-                        if(ended) return; // 🔥 STOP redirect
-                    }
-
-                    // 🔥 FIRST INNINGS END
-                    if (innings == "1" && (wickets >= maxWickets || totalBallsPlayed == totalBallsMatch)) {
-
-                        let target = score + 1;
-                        openInningsModal(target, totalOvers);
-
-                    } else {
-
-                localStorage.setItem("overEnded", overEnded);
-                setTimeout(() => {
-                    window.location.href = `/fall-of-wicket`;
-                }, 200);
-                }
-            });
-
-            return;
+        // the fall-of-wicket page reads these from localStorage; keep them fresh at the
+        // exact moment a wicket falls, not just on page load, so the dropdown there always
+        // defaults to the correct batter even if strike changed earlier in this over
+        if (out.wicket) {
+            localStorage.setItem("strikerName", outPlayer);
+            localStorage.setItem("nonStrikerName", nonStriker === outPlayer ? striker : nonStriker);
         }
 
-        // 🔵 WIDE
-        if (wide) {
+        if (!out.wicket && !out.overEnded) { updateUI(); return; }
 
-            // 🔥 EXTRA UPDATE
-            extraTotal += 1 + run;
-            extraWD += 1;
+        const sr = (r, b) => b === 0 ? 0 : ((r / b) * 100).toFixed(2);
+        const innings = document.getElementById("inningsData")?.innerText.trim();
+        const totalOvers = parseInt(document.getElementById("oversData")?.innerText.trim()) || 0;
+        const players = parseInt(document.getElementById("playersData")?.innerText.trim()) || 11;
+        const maxWickets = players - 1;
+        const totalBallsPlayed = over * 6 + ball;
+        const totalBallsMatch = totalOvers * 6;
 
-            if(run > 0){
-                extraB += run;
-            }
+        const body = {
+            score, wickets, over, ball, striker, non_striker: nonStriker,
+            s_runs: strikerRuns, s_balls: strikerBalls, s_4: striker4, s_6: striker6,
+            ns_runs: nonStrikerRuns, ns_balls: nonStrikerBalls, ns_4: nonStriker4, ns_6: nonStriker6,
+            b_runs: bowlerRuns, b_balls: bowlerBalls, b_wickets: bowlerWickets, b_maiden: bowlerMaiden,
+            this_over: out.overEnded ? "" : thisOver.join(","),
+            finished_over: out.overEnded ? out.finishedOver : "",
+            s_sr: sr(strikerRuns, strikerBalls), ns_sr: sr(nonStrikerRuns, nonStrikerBalls),
+            b_er: bowlerBalls === 0 ? 0 : (bowlerRuns / (bowlerBalls / 6)).toFixed(2),
+            extra: `${extraTotal},${extraLB}LB,${extraB}B,${extraWD}WD,${extraNB}NB`,
+            partnerships: partnerships.length > 0 ? JSON.stringify(partnerships) : null
+        };
+        if (out.wicket) Object.assign(body, {
+            out_player: outPlayer,
+            out_stats: `${outPlayer}=${strikerRuns},${strikerBalls},${striker4},${striker6},${sr(strikerRuns, strikerBalls)}`,
+            over_ended: out.overEnded,
+            wicket_type: localStorage.getItem("wicketType") || "pending",
+            fall_of_wickets: JSON.stringify(fallOfWickets)
+        });
 
-            score += 1 + run;
-            bowlerRuns += 1 + run;
-            overRuns += 1 + run;
+        fetch("/update-score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        }).then(() => {
+            const inningsEnding = wickets >= maxWickets || totalBallsPlayed >= totalBallsMatch;
 
-            // 🔥 PARTNERSHIP UPDATE
-            pRuns += (1 + run);
-
-            
-
-            let current = partnerships[partnerships.length - 1];
-            current.runs += (1 + run);
-
-            thisOver.push(run > 0 ? run + "WD" : "WD");
-
-            if (run % 2 === 1) swapStrike();
-
-            resetChecks();
-            updateUI();
-            return;
-        }
-
-        // 🔵 NO BALL
-        if (noball) {
-
-            // 🔥 EXTRA UPDATE
-            extraTotal += 1 + run;
-            extraNB += 1;
-
-            score += 1 + run;
-            bowlerRuns += 1 + run;
-            overRuns += 1 + run;
-
-
-            // 🔥 NB + BYE
-            if(byes){
-
-                extraB += run;
-                strikerBalls++;
-
-            }
-
-            // 🔥 NB + LEG BYE
-            else if(legbyes){
-
-                extraLB += run;
-                strikerBalls++;
-
-            }
-
-            // 🔥 NORMAL NO BALL
-            else{
-
-                strikerRuns += run;
-                strikerBalls++;
-
-            }
-
-
-            // 🔥 PARTNERSHIP UPDATE
-            pRuns += (1 + run);
-
-            if(partnerships.length === 0){
-
-                partnerships.push({
-
-                    striker: striker,
-                    nonStriker: nonStriker,
-                    runs: 0,
-                    balls: 0
-
-                });
-
-            }
-
-            let current =
-            partnerships[
-            partnerships.length - 1
-            ];
-
-            current.runs +=
-            (1 + run);
-
-
-            thisOver.push(
-                run > 0 ?
-                run + "NB"
-                :
-                "NB"
-            );
-
-
-            if(run % 2 === 1)
-                swapStrike();
-
-
-            resetChecks();
-            updateUI();
-
-            return;
-        }
-
-        // 🟡 BYES / LEG BYES
-        if (byes || legbyes) {
-
-            // 🔥 EXTRA UPDATE
-            extraTotal += run;
-
-            if(byes){
-                extraB += run;
-            }else{
-                extraLB += run;
-            }
-
-            score += run;
-            if (ball < 6) {
-                ball++;
-            }
-            bowlerBalls++;
-            strikerBalls++;
-            overRuns += run;
-
-            // 🔥 PARTNERSHIP UPDATE
-            pRuns += run;
-            pBalls++;
-
-            if(partnerships.length === 0){
-                partnerships.push({
-                    striker: striker,
-                    nonStriker: nonStriker,
-                    runs: 0,
-                    balls: 0
-                });
-            }
-
-            let current = partnerships[partnerships.length - 1];
-            current.runs += run;
-            current.balls++;
-
-            thisOver.push(byes ? (run > 0 ? run + "BYE" : "BYE") : (run > 0 ? run + "LB" : "LB"));
-            let innings = document.getElementById("inningsData")?.innerText.trim();
-
-            let totalOvers = parseInt(document.getElementById("oversData")?.innerText.trim()) || 0;
-            let players = parseInt(document.getElementById("playersData")?.innerText.trim()) || 11;
-            let maxWickets = players - 1;
-
-            let totalBallsPlayed = over * 6 + ball;
-            //let totalBallsPlayed = (over - 1) * 6 + 6;
-            let totalBallsMatch = totalOvers * 6;
-
-            if (run % 2 === 1) swapStrike();
-
-            if (ball >= 6) {
-
-                if (isMaidenOver(thisOver)) {
-                    bowlerMaiden++;
+            if (out.wicket) {
+                // A wicket always has to be confirmed on the Fall-of-wicket page: that is
+                // the only place the real out batter (striker or non-striker), the bowler's
+                // wicket tally and the dismissal type get finalized. This is true even when
+                // the wicket also ends the innings or the match -- we still visit that page
+                // (it will skip asking for a new batsman), then come back here afterward to
+                // show the innings-break or match-result screen. Skipping the page in that
+                // case was exactly why the bowler's wicket count and the batting summary's
+                // dismissal text used to go missing for the very last wicket of an innings.
+                if (innings == "1" && inningsEnding) {
+                    localStorage.setItem("pendingAfterWicket", "inningsBreak");
+                    localStorage.setItem("inningsEndTarget", score + 1);
+                    localStorage.setItem("inningsEndOvers", totalOvers);
+                } else if (innings == "2" && inningsEnding) {
+                    localStorage.setItem("pendingAfterWicket", "matchResult");
+                    localStorage.setItem("pendingResultText", evalResult(score, wickets, over, ball) || "");
+                } else {
+                    localStorage.removeItem("pendingAfterWicket");
                 }
-
-                let finishedOver = thisOver.join(",");
-
-                overRuns = 0;
-                thisOver = [];
-
-                over++;
-                ball = 0;
-                swapStrike();
-                let pSend = partnerships.length > 0 ? JSON.stringify(partnerships) : null;
-                fetch("/update-score", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        score, wickets, over, ball,
-
-                        striker, non_striker: nonStriker,
-
-                        s_runs: strikerRuns,
-                        s_balls: strikerBalls,
-                        s_4: striker4,
-                        s_6: striker6,
-
-                        ns_runs: nonStrikerRuns,
-                        ns_balls: nonStrikerBalls,
-                        ns_4: nonStriker4,
-                        ns_6: nonStriker6,
-
-                        b_runs: bowlerRuns,
-                        b_balls: bowlerBalls,
-                        b_wickets: bowlerWickets,
-                        b_maiden: bowlerMaiden,
-
-                        this_over: "",
-                        finished_over: finishedOver,
-                        extra: `${extraTotal},${extraLB}LB,${extraB}B,${extraWD}WD,${extraNB}NB`,
-                        partnerships: pSend
-                    })
-                }).then(() => {
-
-                   // 🔥 SECOND INNINGS RESULT CHECK FIRST
-                    if(innings == "2"){
-                        let ended = checkMatchResultDirect(score, wickets, over, ball);
-                        if(ended) return; // 🔥 STOP redirect
-                    }
-
-                    // 🔥 FIRST INNINGS END
-                    if (innings == "1" && (wickets >= maxWickets || totalBallsPlayed == totalBallsMatch)) {
-
-                        let target = score + 1;
-                        openInningsModal(target, totalOvers);
-
-                    } else {
-
-                        window.location.href = "/choose-bowler";
-                    }
-                });
-
+                localStorage.setItem("overEnded", out.overEnded);
+                setTimeout(() => { window.location.href = "/fall-of-wicket"; }, 200);
                 return;
             }
 
-            resetChecks();
-            updateUI();
-            return;
-        }
-
-        // 🔴 NORMAL RUN
-        score += run;
-        if (ball < 6) {
-            ball++;
-        }
-        bowlerBalls++;
-        strikerRuns += run;
-        strikerBalls++;
-
-        // 🔥 PARTNERSHIP UPDATE
-        pRuns += run;
-        pBalls++;
-
-        if(partnerships.length === 0){
-            partnerships.push({
-                striker: striker,
-                nonStriker: nonStriker,
-                runs: 0,
-                balls: 0
-            });
-        }
-
-        let current = partnerships[partnerships.length - 1];
-        current.runs += run;
-        current.balls++;
-
-        thisOver.push(run);
-        bowlerRuns += run;
-        overRuns += run;
-
-        if (run === 4) striker4++;
-        if (run === 6) striker6++;
-
-        if (run % 2 === 1) swapStrike();
-        
-        if (ball >= 6) {
-            let innings = document.getElementById("inningsData")?.innerText.trim();
-
-            let totalOvers = parseInt(document.getElementById("oversData")?.innerText.trim()) || 0;
-            let players = parseInt(document.getElementById("playersData")?.innerText.trim()) || 11;
-            let maxWickets = players - 1;
-
-            let totalBallsPlayed = over * 6 + ball;
-            let totalBallsMatch = totalOvers * 6;
-
-            
-            if (isMaidenOver(thisOver)) {
-                bowlerMaiden++;
+            if (innings == "2") {
+                const ended = checkMatchResultDirect(score, wickets, over, ball);
+                if (ended) return;
             }
-
-            let finishedOver = thisOver.join(",");
-
-            overRuns = 0;
-            thisOver = [];
-            
-            over++;
-            ball = 0;
-            swapStrike();
-            
-        
-            let pSend = partnerships.length > 0 ? JSON.stringify(partnerships) : null;
-            fetch("/update-score", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    score, wickets, over, ball,
-
-                    striker, non_striker: nonStriker,
-
-                    s_runs: strikerRuns,
-                    s_balls: strikerBalls,
-                    s_4: striker4,
-                    s_6: striker6,
-
-                    ns_runs: nonStrikerRuns,
-                    ns_balls: nonStrikerBalls,
-                    ns_4: nonStriker4,
-                    ns_6: nonStriker6,
-
-                    b_runs: bowlerRuns,
-                    b_balls: bowlerBalls,
-                    b_wickets: bowlerWickets,
-                    b_maiden: bowlerMaiden,
-
-                    this_over: "",
-                    finished_over: finishedOver,
-                    extra: `${extraTotal},${extraLB}LB,${extraB}B,${extraWD}WD,${extraNB}NB`,
-                    partnerships: pSend
-                })
-            }).then(() => {
-
-                    // 🔥 SECOND INNINGS RESULT CHECK FIRST
-                    if(innings == "2"){
-                        let ended = checkMatchResultDirect(score, wickets, over, ball);
-                        if(ended) return; // 🔥 STOP redirect
-                    }
-
-                    // 🔥 FIRST INNINGS END
-                    if (innings == "1" && (wickets >= maxWickets || totalBallsPlayed == totalBallsMatch)) {
-
-                        let target = score + 1;
-                        openInningsModal(target, totalOvers);
-
-                    } else {
-
-                        window.location.href = "/choose-bowler";
-                    }
-
-                });
-
-            return;
-        }
-
-        updateUI();
+            if (innings == "1" && inningsEnding) {
+                openInningsModal(score + 1, totalOvers);
+            } else {
+                window.location.href = "/choose-bowler";
+            }
+        });
     };
     function resetChecks() {
         document.getElementById("wide").checked = false;
@@ -1069,80 +799,37 @@ function updateNeed(){
 
     
 }
-let matchEnded = false; // 🔥 GLOBAL (একবারই declare)
+let matchEnded = false; //  GLOBAL ( declare)
 
+function evalResult(score, wickets, over, ball) {
+    const target = parseInt(document.getElementById("target")?.innerText) || 0;
+    const totalOvers = parseInt(document.getElementById("oversData")?.innerText) || 0;
+    const players = parseInt(document.getElementById("playersData")?.innerText) || 11;
+    const maxWickets = players - 1;
+    const battingTeam = document.querySelector(".live-top span")?.innerText.split(",")[0];
+    const bowlingTeam = document.getElementById("bowlingTeamData")?.innerText.trim();
+    return KCLEngine.result(score, wickets, over, ball, target, maxWickets, totalOvers, battingTeam, bowlingTeam);
+}
+function finishMatch(text) {
+    matchEnded = true;
+    return fetch("/save-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ result: text })
+    }).then(() => openResult(text));
+}
 function checkMatchResult(){
-
-    if(matchEnded) return; // 🔥 STOP duplicate
-
-    let innings = document.getElementById("inningsData")?.innerText.trim();
-    if(innings != "2") return;
-
-    let scoreText = document.getElementById("score").innerText;
-    let overText = document.getElementById("over").innerText;
-
-    let score = parseInt(scoreText.split(" - ")[0]) || 0;
-    let wickets = parseInt(scoreText.split(" - ")[1]) || 0;
-
-    let parts = overText.split(".");
-    let over = parseInt(parts[0]) || 0;
-    let ball = parseInt(parts[1]) || 0;
-
-    let target = parseInt(document.getElementById("target")?.innerText) || 0;
-
-    let totalOvers = parseInt(document.getElementById("oversData")?.innerText) || 0;
-    let players = parseInt(document.getElementById("playersData")?.innerText) || 11;
-
-    let maxWickets = players - 1;
-
-    let ballsPlayed = over * 6 + ball;
-    let totalBalls = totalOvers * 6;
-
-    let battingTeam = document.querySelector(".live-top span")?.innerText.split(",")[0];
-    let bowlingTeam = document.getElementById("bowlingTeamData")?.innerText.trim();
-    console.log("CHECK RESULT RUNNING:", score, target);
-
-    // 🔥 WIN
-    if(score >= target){
-
-        matchEnded = true;
-
-        let wicketsLeft = maxWickets - wickets;
-        let resultText = `${battingTeam} won by ${wicketsLeft} wickets`;
-
-        setTimeout(() => {
-            fetch("/save-result", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({ result: resultText })
-            }).then(() => {
-                openResult(resultText);
-            });
-        }, 100);
-
-        return;
-    }
-
-    // 🔥 LOSS
-    if(wickets >= maxWickets || ballsPlayed >= totalBalls){
-
-        matchEnded = true;
-
-        let runsShort = target - score;
-        let resultText = `${bowlingTeam} Win by ${runsShort} runs`;
-
-        setTimeout(() => {
-            fetch("/save-result", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({ result: resultText })
-            }).then(() => {
-                openResult(resultText);
-            });
-        }, 100);
-
-        return;
-    }
+    if (matchEnded) return;
+    if (document.getElementById("inningsData")?.innerText.trim() != "2") return;
+    const scoreText = document.getElementById("score").innerText;
+    const overText = document.getElementById("over").innerText;
+    const score = parseInt(scoreText.split(" - ")[0]) || 0;
+    const wickets = parseInt(scoreText.split(" - ")[1]) || 0;
+    const parts = overText.split(".");
+    const over = parseInt(parts[0]) || 0;
+    const ball = parseInt(parts[1]) || 0;
+    const text = evalResult(score, wickets, over, ball);
+    if (text) setTimeout(() => finishMatch(text), 100);
 }
 
 function saveBowler(){
@@ -1165,6 +852,39 @@ function saveBowler(){
     if(newPlayer && type){
         url += "&new=" + encodeURIComponent(newPlayer);
         url += "&type=" + encodeURIComponent(type);
+        url += "&overEnded=true";
+    }
+
+    window.location.href = url;
+}
+function saveBowler2(){
+
+    const bowler =
+    document.getElementById("bowlerName").value;
+
+    if(!bowler.trim()){
+        alert("Select bowler");
+        return;
+    }
+
+    const params =
+    new URLSearchParams(window.location.search);
+
+    const newPlayer = params.get("new");
+    const type = params.get("type");
+
+    let url =
+    "/live-match-2?bowler="
+    + encodeURIComponent(bowler);
+
+    if(newPlayer && type){
+
+        url += "&new="
+        + encodeURIComponent(newPlayer);
+
+        url += "&type="
+        + encodeURIComponent(type);
+
         url += "&overEnded=true";
     }
 
@@ -1295,67 +1015,11 @@ function goNewMatch(){
     window.location.href = "/all-match-files";
 }
 function checkMatchResultDirect(score, wickets, over, ball){
-
-    if(matchEnded) return true;
-
-    let target = parseInt(document.getElementById("target")?.innerText) || 0;
-    let totalOvers = parseInt(document.getElementById("oversData")?.innerText) || 0;
-    let players = parseInt(document.getElementById("playersData")?.innerText) || 11;
-
-    let maxWickets = players - 1;
-
-    let ballsPlayed = over * 6 + ball;
-    let totalBalls = totalOvers * 6;
-
-    let battingTeam = document.querySelector(".live-top span")?.innerText.split(",")[0];
-    let bowlingTeam = document.getElementById("bowlingTeamData")?.innerText.trim();
-
-    // 🔥 WIN
-    if(score >= target){
-        matchEnded = true;
-
-        let wicketsLeft = maxWickets - wickets;
-        let resultText = `${battingTeam} won by ${wicketsLeft} wickets`;
-
-        fetch("/save-result", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({ result: resultText })
-        }).then(() => openResult(resultText));
-
-        return true;
-    }
-
-    // 🔥 LOSS
-    if(wickets >= maxWickets || ballsPlayed >= totalBalls){
-        matchEnded = true;
-        
-        // 🔥 DRAW CONDITION (ADD ONLY THIS PART)
-        if(score === target - 1){
-            let resultText = `Match Draw(Running super over)`;
-
-            fetch("/save-result", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({ result: resultText })
-            }).then(() => openResult(resultText));
-
-            return true;
-        }
-
-        let runsShort = (target - score)-1;
-        let resultText = `${bowlingTeam} Win by ${runsShort} runs`;
-
-        fetch("/save-result", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({ result: resultText })
-        }).then(() => openResult(resultText));
-
-        return true;
-    }
-
-    return false;
+    if (matchEnded) return true;
+    const text = evalResult(score, wickets, over, ball);
+    if (!text) return false;
+    finishMatch(text);
+    return true;
 }
 
 function syncPartnershipFromDOM(){

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Match</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+<div class="nav">
+    <a href="/opening-players">Back</a>
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+    
+</div>
+<h2 class="fixture-title">🏏 Live Match</h2>
+
+<div class="live-container">
+
+    <!-- SCORE -->
+    <div class="live-card">
+        <div class="live-top">
+            <span>
+            {{ data.batting }}, 
+            {{ "2nd innings" if data.get("innings") == "2" else "1st innings" }}
+            </span>
+            <div style="display:flex; gap:40px; align-items:center;">
+
+                <!-- CRR -->
+                <div style="text-align:center;">
+                    <div>CRR</div>
+                    <div id="crr">0.00</div>
+                </div>
+
+                {% if data.innings == "2" %}
+
+                
+                <!-- RRR -->
+                <div style="text-align:center;">
+                    <div>RR</div>
+                    <div id="rrr">0.00</div>
+                </div>
+                <!-- TARGET -->
+                <div style="text-align:center;">
+                    <div>Target</div>
+                    <div id="target">{{ data.target }}</div>
+                </div>
+
+                {% endif %}
+
+            </div>
+        </div>
+
+        <h1>
+            <span id="score">{{ data.score }} - {{ data.wickets }}</span>
+            <small>(<span id="over">{{ data.over }}.{{ data.ball }}</span>)</small>
+        </h1>
+        {% if data.innings == "2" %}
+        <div id="needText" style="text-align:center; color:rgb(4, 4, 4);">
+            {{ data.batting }} need {{ data.target|int - data.score|int }} runs in 
+            {{ data.overs|int - data.over|int }} overs
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- BATSMAN -->
+    <div class="live-card">
+       <div class="live-row header" style="background:#b0afaf; color:rgb(41, 41, 41);">
+            <span>Batsman</span>
+            <span>R</span>
+            <span>B</span>
+            <span>4s</span>
+            <span>6s</span>
+            <span>SR</span>
+        </div>
+    
+        <div class="live-row">
+            <span id="strikerName">{{ data.striker }}</span>
+            <span id="sRuns">{{ data.s_runs }}</span>
+            <span id="sBalls">{{ data.s_balls }}</span>
+            <span id="s4">{{ data.s_4 }}</span>
+            <span id="s6">{{ data.s_6 }}</span>
+            <span id="sSR">{{ data.s_sr }}</span>
+
+        </div>
+
+        <div class="live-row">
+            <span id="nonStrikerName">{{ data.non_striker }}</span>
+            <span id="nsRuns">{{ data.ns_runs }}</span>
+            <span id="nsBalls">{{ data.ns_balls }}</span>
+            <span id="ns4">{{ data.ns_4 }}</span>
+            <span id="ns6">{{ data.ns_6 }}</span>
+            <span id="nsSR">{{ data.ns_sr }}</span>
+
+        </div>
+
+        <div class="live-row header" style="background:#b0afaf; color:rgb(41, 41, 41);">
+            <span>Bowler</span>
+            <span>O</span>
+            <span>R</span>
+            <span>M</span>
+            <span>W</span>
+            <span>ER</span>
+        </div>
+
+        <div class="live-row">
+            <span id="bowlerName">{{ data.bowler }}</span>
+            <span id="bOver">
+               {{ (data.get('b_balls', 0)|int // 6) }}.{{ (data.get('b_balls', 0)|int % 6) }}
+            </span>
+            <span id="bRun">{{ data.b_runs }}</span>
+            <span id="bMaiden">{{ data.b_maiden }}</span>
+            <span id="bWicket">{{ data.b_wickets }}</span>
+            <span id="bER">{{ data.b_er }}</span>
+            
+        </div>
+    </div>
+
+    <!-- THIS OVER -->
+    <div class="live-card">
+        <div class="this-over-row">
+            <span class="this-label">This over:</span>
+
+            <div id="thisOver" class="this-inline">
+                {{ data.this_over }}
+            </div>
+        </div>
+    </div>
+    <!-- OVER LOG -->
+    <div class="live-card this-over-row" id="overLogMain">
+
+        <!-- FIXED TEXT -->
+        <span class="this-label" style="
+            min-width:90px;
+            font-weight:bold;
+            color:white;
+        ">
+            Over Log:
+        </span>
+
+        <!-- ONLY BOXES SCROLL -->
+        <div style="
+            display:flex;
+            gap:8px;
+            overflow-x:auto;
+            white-space:nowrap;
+            flex:1;
+        ">
+
+        {% for ov in data.get("over_log","").split("|") if ov.strip() %}
+
+            {% for ball in ov.split(",") %}
+
+            <div style="
+                min-width:30px;
+                height:30px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                background:#e5e5e5;
+                color:black;
+                border-radius:6px;
+                font-weight:bold;
+                font-size:14px;
+                flex-shrink:0;
+            ">
+                {{ "0" if ball == "." else ball }}
+            </div>
+
+            {% endfor %}
+
+            <div style="width:10px; flex-shrink:0;"></div>
+
+        {% endfor %}
+
+        </div>
+
+    </div>
+    <!-- OPTIONS -->
+    
+    <div class="live-card options">
+        <label><input type="checkbox" id="wide"> Wide</label>
+        <label><input type="checkbox" id="noball"> No Ball</label>
+        <label><input type="checkbox" id="byes"> Byes</label>
+        <label><input type="checkbox" id="legbyes"> Leg Byes</label>
+        <label><input type="checkbox" id="wicket"> Wicket</label>
+
+        <div class="action-btns">
+            <button class="small-btn" onclick="retirePlayer()"> Retire </button>
+
+            <button class="small-btn" onclick="location.reload()">Reload</button>
+        </div>
+    </div>
+
+    
+
+    <!-- RUN BUTTONS -->
+    <div class="run-section">
+
+        <div class="left-actions">
+            <button onclick="openUndo()">Undo</button>
+            <button onclick="openPartner()">Partnerships</button>
+            <button onclick="openExtra()">Extras</button>
+        </div>
+        <!-- 🔥 ADD THIS (hidden data holder) -->
+        <div id="extraData" style="display:none;">
+            {{ data.extra }}
+        </div>
+        <div id="partnerData" style="display:none;">
+            {{ data.partnerships }}
+        </div>
+        <div id="fowData" style="display:none;">
+            {{ data.fall_of_wickets }}
+        </div>
+
+        <div class="runs">
+            <button onclick="addRun(0)">0</button>
+            <button onclick="addRun(1)">1</button>
+            <button onclick="addRun(2)">2</button>
+            <button onclick="addRun(3)">3</button>
+            <button onclick="addRun(4)">4</button>
+            <button onclick="addRun(5)">5</button>
+            <button onclick="addRun(6)">6</button>
+        </div>
+
+    </div>
+
+</div>
+<!-- 🔥 EXTRAS MODAL (MOVE HERE) -->
+<div id="extraModal" class="modal">
+    <div class="team-card row-card add-box" style="flex-direction: column; gap: 15px;">
+
+        <h3 style="color:white;">Extras</h3>
+
+        <div style="width:100%; color:white;">
+            <p>Total: <span id="exTotal">0</span></p>
+            <p>Leg Bye: <span id="exLB">0</span></p>
+            <p>Bye: <span id="exB">0</span></p>
+            <p>Wide: <span id="exWD">0</span></p>
+            <p>No Ball: <span id="exNB">0</span></p>
+        </div>
+
+        <button onclick="closeExtra()">Close</button>
+    </div>
+</div>
+<!-- 🔥 RESULT MODAL -->
+<div id="resultModal" class="modal">
+    <div class="team-card row-card add-box" style="flex-direction: column; gap: 15px;">
+
+        <h2 style="color:white;">Match Result</h2>
+
+        <p id="resultText" style="color:white; font-size:20px;"></p>
+        <div style="display:flex; gap:10px;">
+            <button onclick="goNewMatch()">OK</button>
+            <button onclick="closeResult()">Close</button>
+        </div>
+    </div>
+</div>
+<!-- 🔥 UNDO CONFIRM MODAL -->
+<div id="undoModal" class="modal">
+    <div class="team-card row-card add-box" style="flex-direction: column; gap: 15px;">
+
+        <h3 style="color:white;">Confirm Undo</h3>
+
+        <p style="color:white;">Are you sure you want to undo last action?</p>
+
+        <div style="display:flex; gap:10px;">
+            <button onclick="confirmUndo()">OK</button>
+            <button onclick="closeUndo()">Cancel</button>
+        </div>
+
+    </div>
+</div>
+<!-- 🔥 PARTNERSHIP MODAL -->
+<div id="partnerModal" class="modal">
+    <div class="team-card row-card add-box" style="flex-direction: column; gap: 15px;">
+
+        <h3 style="color:white;">Partnerships</h3>
+
+        <div id="partnerList" style="width:100%; color:white;"></div>
+
+        <button onclick="closePartner()">Close</button>
+    </div>
+</div>
+<!-- 🔥 INNINGS BREAK MODAL -->
+<div id="inningsModal" class="modal">
+    <div class="team-card row-card add-box" style="flex-direction: column; gap: 15px;">
+
+        <h3 style="color:white;">End of First Innings</h3>
+
+        <p style="color:white;" id="targetText"></p>
+        <p style="color:white;" id="rrrText"></p>
+
+        <div style="display:flex; gap:10px;">
+            <button onclick="startSecond()">OK</button>
+            <button onclick="closeInnings()">Cancel</button>
+        </div>
+
+    </div>
+</div>
+<div id="totalOvers" style="display:none;">
+    {{ data.overs }}
+</div>
+<div id="inningsData" style="display:none;">
+    {{ data.innings }}
+</div>
+<div id="oversData" style="display:none;">
+    {{ data.overs }}
+</div>
+
+<div id="playersData" style="display:none;">
+    {{ data.players }}
+</div>
+<span id="bowlingTeamData" style="display:none;">
+    {% if data.innings == "2" %}
+        {{ data.bowling }}
+    {% endif %}
+</span>
+<script>
+function retirePlayer(){
+
+
+localStorage.setItem(
+    "wicketType",
+    "Retire"
+);
+
+localStorage.setItem(
+    "overEnded",
+    "false"
+);
+
+window.location.href ="/fall-of-wicket-2";
+
+
+}
+</script>
+<script src="{{ url_for('static', filename='css/js/scoring-engine.js') }}"></script>
+<script src="{{ url_for('static', filename='css/js/script2.js') }}"></script>
+<script>
+// If a wicket on the previous ball ended the innings/match, that was confirmed on the
+// Fall-of-wicket page (see scoring-engine.js / script2.js) and we were sent back here
+// with a flag in the URL. Finish the job: pop up the innings-break or match-result screen.
+(function () {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("inningsBreak") === "1") {
+        const target = parseInt(localStorage.getItem("inningsEndTarget")) || 0;
+        const overs = parseInt(localStorage.getItem("inningsEndOvers")) || 0;
+        localStorage.removeItem("inningsEndTarget");
+        localStorage.removeItem("inningsEndOvers");
+        window.addEventListener("load", function () { openInningsModal(target, overs); });
+    } else if (params.get("matchResult") === "1") {
+        const text = localStorage.getItem("pendingResultText") || "";
+        localStorage.removeItem("pendingResultText");
+        if (text) window.addEventListener("load", function () { finishMatch(text); });
+    }
+})();
+</script>
+</body>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+</html>

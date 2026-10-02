@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Match Details</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+ <!-- 🔥 Navigation -->
+<div class="nav">
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+    
+</div>
+<div class="nav">
+    <button id="btnLive" onclick="showTab('live')">Live</button>
+    <button id="btnScore" onclick="showTab('score')">Match Summary</button>
+    <button id="btnSquad" onclick="showTab('squad')">Squads</button>
+    <button id="btnOver" onclick="showTab('over')">Over</button>
+</div>
+<div id="liveTab">
+
+<h2 class="fixture-title">🏏 Match Info</h2>
+
+<!-- 🔥 RESULT CARD -->
+<div class="match-card">
+    <div class="result-text">
+        {{ result }}
+    </div>
+</div>
+
+<!-- 🔥 SCORE CARD -->
+<div class="match-card">
+
+    <!-- TEAM 1 -->
+    <div class="team-row">
+        <div class="left">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + first.batting + '.webp') }}">
+            {{ first.batting|upper }}
+        </div>
+        <div class="right">
+            {{ first.score }}-{{ first.wickets }} ({{ first.over }}.{{ first.ball }})
+        </div>
+    </div>
+
+    <!-- TEAM 2 -->
+    {% if second.score %}
+    <div class="team-row">
+        <div class="left">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + second.batting + '.webp') }}">
+            {{ second.batting|upper }}
+        </div>
+        <div class="right">
+            {{ second.score }}-{{ second.wickets }} ({{ second.over }}.{{ second.ball }})
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<!-- 🔥 PLAYER OF MATCH -->
+<div class="match-card" style="margin-top:10px;">
+
+    <div style="color:#777; font-size:13px; margin-bottom:8px;">
+        PLAYER OF THE MATCH
+    </div>
+
+    <div class="player-row">
+        <div class="player-left">
+
+            <div class="avatar" style="width:120px;height:120px;">
+                <img loading="lazy" src="/static/images/players/{{ pom | replace(' ', '%20') }}.webp"
+                    style="width:100%;height:100%;object-fit:cover;"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="initial">{{ pom[0] if pom else '?' }}</div>
+            </div>
+
+            <span>{{ pom }}</span>
+        </div>
+    </div>
+
+</div>
+
+</div>
+
+<!-- ================= SCORECARD ================= -->
+<div id="scoreTab" style="display:none;">
+<h2 class="fixture-title">🏏 Match Summary</h2>
+
+<h3 class="result-text">{{ result }}</h3>
+    <!-- 🔴 FIRST INNINGS -->
+    <div class="team-header">
+        <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + first.batting + '.webp') }}">
+        <span>{{ first.batting }}</span>
+        <span class="score-right">
+            {{ first.score }}-{{ first.wickets }} ({{ first.over }}.{{ first.ball }})
+        </span>
+    </div>
+
+    <div class="table-header">
+        <span>Batsman</span><span>R</span><span>B</span><span>4s</span><span>6s</span><span>SR</span>
+    </div>
+
+    {% for b in first.batsman_log.split("|") %}
+        {% set name = b.split("=")[0] %}
+        {% set s = b.split("=")[1].split(",") %}
+
+        <div class="table-row">
+            <div>
+                <div class="name" onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">{{ name }}</div>
+
+                <!-- ✅ FIXED DISMISSAL -->
+                {% set clean_name = name.split('(')[0].strip().lower() %}
+                <div class="out">
+                    {{ first.dismissals.get(clean_name, "not out") }}
+                </div>
+            </div>
+
+            <span>{{ s[0] }}</span>
+            <span>{{ s[1] }}</span>
+            <span>{{ s[2] }}</span>
+            <span>{{ s[3] }}</span>
+            {% set runs = s[0]|int %}
+            {% set balls = s[1]|int %}
+
+            <span>
+            {% if s[4]|float > 0 %}
+                {{ s[4] }}
+            {% elif balls > 0 %}
+                {{ ((runs / balls) * 100)|round(2) }}
+            {% else %}
+                0.00
+            {% endif %}
+            </span>
+        </div>
+    {% endfor %}
+
+    <div class="summary-line">
+        <span class="left">Extras {{ first.extra }}</span>
+        <span class="right">
+            Total {{ first.score }}-{{ first.wickets }} ({{ first.over }}.{{ first.ball }})
+        </span>
+    </div>
+
+    <div class="table-header">
+        <span>Bowler</span><span>O</span><span>R</span><span>M</span><span>W</span><span>ER</span>
+    </div>
+
+    {% for b in first.bowler_log.split("|") %}
+        {% set name = b.split("=")[0] %}
+        {% set s = b.split("=")[1].split(",") %}
+
+        <div class="table-row">
+            <span>{{ name }}</span>
+            <span>{{ s[0] }}</span>
+            <span>{{ s[1] }}</span>
+            <span>{{ s[2] }}</span>
+            <span>{{ s[3] }}</span>
+            {% set runs = s[1]|int %}
+            {% set overs = s[0].split('.') %}
+
+            {% set total_balls = (overs[0]|int * 6) + (overs[1]|int if overs|length > 1 else 0) %}
+
+            <span>
+            {% if s[4]|float > 0 %}
+                {{ s[4] }}
+            {% elif total_balls > 0 %}
+                {{ ((runs / total_balls) * 6)|round(2) }}
+            {% else %}
+                0.00
+            {% endif %}
+            </span>
+        </div>
+    {% endfor %}
+    {% if first.partnerships %}
+
+    <div class="table-header">
+        <span>Partnerships</span>
+        <span></span>
+        <span></span>
+    </div>
+
+    {% for p in first.partnerships %}
+
+    <div class="partnership-row">
+
+        <div class="partnership-left">
+            {{ p.striker }}
+        </div>
+
+        <div class="partnership-center">
+            {{ p.runs }} ({{ p.balls }})
+        </div>
+
+        <div class="partnership-right">
+            {{ p.nonStriker }}
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% endif %}
+
+    {% if first.fall_of_wickets %}
+
+    <div class="table-header fow-header">
+        <span>Fall of Wickets</span>
+        <span>Score</span>
+        <span>Over</span>
+    </div>
+
+    {% for w in first.fall_of_wickets %}
+
+    <div class="partnership-row">
+
+        <div class="partnership-left">
+            {{ w.player }}
+        </div>
+
+        <div class="partnership-center">
+            {{ w.run }}-{{ w.wicket }}
+        </div>
+
+        <div class="partnership-right">
+            {{ w.over }}
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% endif %}
+    <!-- 🔵 SECOND INNINGS -->
+    {% if second.score %}
+    <div class="team-header">
+        <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + second.batting + '.webp') }}">
+        <span>{{ second.batting }}</span>
+        <span class="score-right">
+            {{ second.score }}-{{ second.wickets }} ({{ second.over }}.{{ second.ball }})
+        </span>
+    </div>
+
+    <div class="table-header">
+        <span>Batsman</span><span>R</span><span>B</span><span>4s</span><span>6s</span><span>SR</span>
+    </div>
+
+    {% for b in second.batsman_log.split("|") %}
+        {% set name = b.split("=")[0] %}
+        {% set s = b.split("=")[1].split(",") %}
+
+        <div class="table-row">
+            <div>
+                <div class="name" onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">{{ name }}</div>
+
+                <!-- ✅ FIXED DISMISSAL -->
+                {% set clean_name = name.split('(')[0].strip().lower() %}
+                <div class="out">
+                    {{ second.dismissals.get(clean_name, "not out") }}
+                </div>
+            </div>
+
+            <span>{{ s[0] }}</span>
+            <span>{{ s[1] }}</span>
+            <span>{{ s[2] }}</span>
+            <span>{{ s[3] }}</span>
+            {% set runs = s[0]|int %}
+            {% set balls = s[1]|int %}
+
+            <span>
+            {% if s[4]|float > 0 %}
+                {{ s[4] }}
+            {% elif balls > 0 %}
+                {{ ((runs / balls) * 100)|round(2) }}
+            {% else %}
+                0.00
+            {% endif %}
+            </span>
+        </div>
+    {% endfor %}
+
+    <div class="summary-line">
+        <span class="left">Extras {{ second.extra }}</span>
+        <span class="right">
+            Total {{ second.score }}-{{ second.wickets }} ({{ second.over }}.{{ second.ball }})
+        </span>
+    </div>
+
+    <div class="table-header">
+        <span>Bowler</span><span>O</span><span>R</span><span>M</span><span>W</span><span>ER</span>
+    </div>
+
+    {% for b in second.bowler_log.split("|") %}
+        {% set name = b.split("=")[0] %}
+        {% set s = b.split("=")[1].split(",") %}
+
+        <div class="table-row">
+            <span>{{ name }}</span>
+            <span>{{ s[0] }}</span>
+            <span>{{ s[1] }}</span>
+            <span>{{ s[2] }}</span>
+            <span>{{ s[3] }}</span>
+            {% set runs = s[1]|int %}
+            {% set overs = s[0].split('.') %}
+
+            {% set total_balls = (overs[0]|int * 6) + (overs[1]|int if overs|length > 1 else 0) %}
+
+            <span>
+            {% if s[4]|float > 0 %}
+                {{ s[4] }}
+            {% elif total_balls > 0 %}
+                {{ ((runs / total_balls) * 6)|round(2) }}
+            {% else %}
+                0.00
+            {% endif %}
+            </span>
+        </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if second.partnerships %}
+
+    <div class="table-header">
+        <span>Partnerships</span>
+        <span></span>
+        <span></span>
+    </div>
+
+    {% for p in second.partnerships %}
+
+    <div class="partnership-row">
+
+        <div class="partnership-left">
+            {{ p.striker }}
+        </div>
+
+        <div class="partnership-center">
+            {{ p.runs }} ({{ p.balls }})
+        </div>
+
+        <div class="partnership-right">
+            {{ p.nonStriker }}
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% endif %}
+    
+    {% if second.fall_of_wickets %}
+
+    <div class="table-header fow-header">
+        <span>Fall of Wickets</span>
+        <span>Score</span>
+        <span>Over</span>
+    </div>
+
+    {% for w in second.fall_of_wickets %}
+
+    <div class="partnership-row">
+
+        <div class="partnership-left">
+            {{ w.player }}
+        </div>
+
+        <div class="partnership-center">
+            {{ w.run }}-{{ w.wicket }}
+        </div>
+
+        <div class="partnership-right">
+            {{ w.over }}
+        </div>
+
+    </div>
+
+    {% endfor %}
+
+    {% endif %}
+</div>
+
+<!-- ================= SQUADS ================= -->
+<div id="squadTab" style="display:none;">
+<h2 class="fixture-title">🏏 Team Squads</h2>
+
+   <div class="squad-header">
+
+        <span style="display:flex; align-items:center; gap:6px;">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + first.host + '.webp') }}"
+                style="width:65px; height:50px;">
+            {{ first.host|upper }}
+        </span>
+
+        <span style="display:flex; align-items:center; gap:6px;">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + first.visitor + '.webp') }}"
+                style="width:65px; height:50px;">
+            {{ first.visitor|upper }}
+        </span>
+
+    </div>
+
+    <div class="squad-grid">
+
+        <!-- 🔥 COMMON PLAYING XI HEADER -->
+        <div class="team-card row-card center-card playing" style="grid-column: 1 / -1;">
+            <div>Playing XI</div>
+        </div>
+
+        <!-- 🔴 TEAM 1 PLAYING -->
+        <div>
+        {% for p in t1_play %}
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="avatar">
+                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                    </div>
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+        <!-- 🔵 TEAM 2 PLAYING -->
+        <div>
+        {% for p in t2_play %}
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="avatar">
+                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                    </div>
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+        <!-- 🔥 COMMON BENCH HEADER -->
+        <div class="team-card row-card center-card bench" style="grid-column: 1 / -1;">
+            <div>Bench</div>
+        </div>
+
+        <!-- TEAM 1 BENCH -->
+        <div>
+        {% for p in t1_bench %}
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="avatar">
+                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                    </div>
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+        <!-- TEAM 2 BENCH -->
+        <div>
+        {% for p in t2_bench %}
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="avatar">
+                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                    </div>
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+        <!-- 🔥 COMMON STAFF HEADER -->
+        <div class="team-card row-card center-card staff" style="grid-column: 1 / -1;">
+            <div>Supporting Staff</div>
+        </div>
+
+        <!-- TEAM 1 STAFF -->
+        <div>
+        {% for p in t1_staff %}
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="avatar">
+                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                    </div>
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+        <!-- TEAM 2 STAFF -->
+        <div>
+        {% for p in t2_staff %}
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="avatar">
+                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                    </div>
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+
+    </div>
+
+</div>
+<!-- ================= OVER LOG ================= -->
+<div id="overTab" style="display:none;">
+
+    <h2 class="fixture-title">🏏 Over Summary</h2>
+
+    <!-- FIRST INNINGS -->
+    <div class="over-card">
+
+        <h3 style="text-align:center; color:white;">
+            1st Innings
+        </h3>
+
+        <div style="
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+            margin-top:15px;
+        ">
+
+        {% for ov in first.over_log.split("|") if ov.strip() %}
+
+            <div>
+
+                <div style="
+                    color:#ffd54f;
+                    margin-bottom:6px;
+                    font-weight:bold;
+                ">
+                    Over {{ loop.index }}
+                </div>
+
+                <div style="
+                    display:flex;
+                    gap:8px;
+                    overflow-x:auto;
+                ">
+
+                {% for ball in ov.split(",") %}
+
+                    {% set b = "0" if ball == "." else ball %}
+
+                    <div class="over-ball
+                    {% if b == '4' %} four
+                    {% elif b == '6' %} six
+                    {% elif b == 'W' %} wicket
+                    {% endif %}
+                    ">
+                        {{ b }}
+                    </div>
+
+                {% endfor %}
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+
+        <!-- 🔥 RUNNING OVER -->
+        {% if first.this_over.strip() %}
+
+        <div>
+
+            <div style="
+                color:#00ff9c;
+                margin-bottom:6px;
+                font-weight:bold;
+            ">
+                Over {{ first.over_log.split("|")|length + 1 }}
+            </div>
+
+            <div style="
+                display:flex;
+                gap:8px;
+                overflow-x:auto;
+            ">
+
+            {% for ball in first.this_over.split(",") if ball.strip() %}
+
+                {% set b = "0" if ball == "." else ball %}
+
+                <div class="over-ball
+                {% if b == '4' %} four
+                {% elif b == '6' %} six
+                {% elif b == 'W' %} wicket
+                {% endif %}
+                ">
+                    {{ b }}
+                </div>
+
+            {% endfor %}
+
+            </div>
+
+        </div>
+
+        {% endif %}
+
+        </div>
+
+    </div>
+
+    <!-- SECOND INNINGS -->
+    {% if second.over_log %}
+
+    <div class="over-card">
+
+        <h3 style="text-align:center; color:white;">
+            2nd Innings
+        </h3>
+
+        <div style="
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+            margin-top:15px;
+        ">
+
+        {% for ov in second.over_log.split("|") if ov.strip() %}
+
+            <div>
+
+                <div style="
+                    color:#ffd54f;
+                    margin-bottom:6px;
+                    font-weight:bold;
+                ">
+                    Over {{ loop.index }}
+                </div>
+
+                <div style="
+                    display:flex;
+                    gap:8px;
+                    overflow-x:auto;
+                ">
+
+                {% for ball in ov.split(",") %}
+
+                    {% set b = "0" if ball == "." else ball %}
+
+                    <div class="over-ball
+                    {% if b == '4' %} four
+                    {% elif b == '6' %} six
+                    {% elif b == 'W' %} wicket
+                    {% endif %}
+                    ">
+                        {{ b }}
+                    </div>
+
+                {% endfor %}
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+
+        <!-- 🔥 RUNNING OVER -->
+        {% if second.this_over.strip() %}
+
+        <div>
+
+            <div style="
+                color:#00ff9c;
+                margin-bottom:6px;
+                font-weight:bold;
+            ">
+                Over {{ second.over_log.split("|")|length + 1 }}
+            </div>
+
+            <div style="
+                display:flex;
+                gap:8px;
+                overflow-x:auto;
+            ">
+
+            {% for ball in second.this_over.split(",") if ball.strip() %}
+
+                {% set b = "0" if ball == "." else ball %}
+
+                <div class="over-ball
+                {% if b == '4' %} four
+                {% elif b == '6' %} six
+                {% elif b == 'W' %} wicket
+                {% endif %}
+                ">
+                    {{ b }}
+                </div>
+
+            {% endfor %}
+
+            </div>
+
+        </div>
+
+        {% endif %}
+
+        </div>
+
+    </div>
+
+    {% endif %}
+
+</div>
+<script>
+function showTab(tab){
+
+    document.getElementById("liveTab").style.display = tab==="live"?"block":"none";
+    document.getElementById("scoreTab").style.display = tab==="score"?"block":"none";
+    document.getElementById("squadTab").style.display = tab==="squad"?"block":"none";
+    document.getElementById("overTab").style.display = tab==="over"?"block":"none";
+
+    // active button color
+    document.getElementById("btnLive").classList.remove("active");
+    document.getElementById("btnScore").classList.remove("active");
+    document.getElementById("btnSquad").classList.remove("active");
+    document.getElementById("btnOver").classList.remove("active");
+
+    if(tab==="live"){
+        document.getElementById("btnLive").classList.add("active");
+    }else if(tab==="score"){
+        document.getElementById("btnScore").classList.add("active");
+    }else if(tab==="squad"){
+        document.getElementById("btnSquad").classList.add("active");
+    }else if(tab==="over"){
+        document.getElementById("btnOver").classList.add("active");
+    }
+}
+window.onload = () => showTab("live");  // default same
+</script>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+</body>
+</html>

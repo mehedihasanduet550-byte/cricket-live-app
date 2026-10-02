@@ -1,0 +1,1137 @@
+@app.route("/download-match-pdf")
+def download_match_pdf():
+
+    import os
+    import json
+    import ast
+
+    file = request.args.get("file", "").strip()
+
+    if not file:
+        return "Match file missing", 400
+
+    file = os.path.basename(file)
+
+    if not file.endswith("_1st.txt"):
+        return "Invalid match file", 400
+
+    folder = "data/all_match"
+
+    first_path = os.path.join(folder, file)
+
+    if not os.path.exists(first_path):
+        return "Match not found", 404
+
+    second_path = first_path.replace(
+        "_1st.txt",
+        "_2nd.txt"
+    )
+
+    # ---------------------------------------------------------
+    # LOAD TXT
+    # ---------------------------------------------------------
+
+    def load_file(path):
+
+        data = {}
+
+        if not os.path.exists(path):
+            return data
+
+        with open(
+            path,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            for line in f:
+
+                if "=" in line:
+
+                    k, v = line.rstrip().split(
+                        "=",
+                        1
+                    )
+
+                    data[k] = v
+
+        return data
+
+    first = load_file(first_path)
+    second = load_file(second_path)
+
+    # ---------------------------------------------------------
+    # SAFE JSON
+    # ---------------------------------------------------------
+
+    def safe_json(value):
+
+        if not value:
+            return []
+
+        try:
+            return json.loads(value)
+
+        except Exception:
+
+            try:
+                return ast.literal_eval(value)
+
+            except Exception:
+                return []
+
+    # ---------------------------------------------------------
+    # DATA
+    # ---------------------------------------------------------
+
+    first_partnerships = safe_json(
+        first.get("partnerships", "[]")
+    )
+
+    second_partnerships = safe_json(
+        second.get("partnerships", "[]")
+    )
+
+    first_fow = safe_json(
+        first.get("fall_of_wickets", "[]")
+    )
+
+    second_fow = safe_json(
+        second.get("fall_of_wickets", "[]")
+    )
+
+    first_wickets = safe_json(
+        first.get("wickets_log", "[]")
+    )
+
+    second_wickets = safe_json(
+        second.get("wickets_log", "[]")
+    )
+
+    # ---------------------------------------------------------
+    # DISMISSALS
+    # ---------------------------------------------------------
+
+    def build_dismissals(log):
+
+        result = {}
+
+        for w in log:
+
+            name = str(
+                w.get("batsman", "")
+            ).split("(")[0].strip().lower()
+
+            typ = str(
+                w.get("type", "")
+            ).lower()
+
+            bowler = w.get(
+                "bowler",
+                ""
+            )
+
+            if typ == "bowled":
+
+                result[name] = f"b {bowler}"
+
+            elif "catch" in typ:
+
+                result[name] = f"c b {bowler}"
+
+            elif "run out" in typ:
+
+                result[name] = "run out"
+
+            elif typ == "lbw":
+
+                result[name] = f"lbw b {bowler}"
+
+            else:
+
+                result[name] = w.get(
+                    "type",
+                    "out"
+                )
+
+        return result
+
+    first_dismissals = build_dismissals(
+        first_wickets
+    )
+
+    second_dismissals = build_dismissals(
+        second_wickets
+    )
+
+    # ---------------------------------------------------------
+    # PDF
+    # ---------------------------------------------------------
+
+    buffer = BytesIO()
+
+    page_w, page_h = A4
+
+    pdf = canvas.Canvas(
+        buffer,
+        pagesize=A4
+    )
+
+    # Compact margin
+    LEFT = 25
+    RIGHT = page_w - 25
+
+    y = page_h - 35
+
+    # ---------------------------------------------------------
+    # COLORS
+    #
+    # These are dark/green/yellow tones matching the existing
+    # scoreboard theme instead of black/white PDF tables.
+    # ---------------------------------------------------------
+
+    BG = colors.HexColor("#111827")
+    CARD = colors.HexColor("#18212b")
+    HEADER = colors.HexColor("#009270")
+    GREEN = colors.HexColor("#00ff9c")
+    YELLOW = colors.HexColor("#ffd54f")
+    WHITE = colors.white
+    MUTED = colors.HexColor("#b8c0c8")
+    BORDER = colors.HexColor("#34404b")
+
+    # ---------------------------------------------------------
+    # BACKGROUND
+    # ---------------------------------------------------------
+
+    pdf.setFillColor(BG)
+
+    pdf.rect(
+        0,
+        0,
+        page_w,
+        page_h,
+        fill=1,
+        stroke=0
+    )
+
+    # ---------------------------------------------------------
+    # HELPERS
+    # ---------------------------------------------------------
+
+    def text(
+        value,
+        x,
+        yy,
+        size=9,
+        color=WHITE,
+        bold=False
+    ):
+
+        pdf.setFillColor(color)
+
+        pdf.setFont(
+            "Helvetica-Bold" if bold
+            else "Helvetica",
+            size
+        )
+
+        pdf.drawString(
+            x,
+            yy,
+            str(value)
+        )
+
+    def center_text(
+        value,
+        yy,
+        size=9,
+        color=WHITE,
+        bold=False
+    ):
+
+        pdf.setFillColor(color)
+
+        pdf.setFont(
+            "Helvetica-Bold" if bold
+            else "Helvetica",
+            size
+        )
+
+        pdf.drawCentredString(
+            page_w / 2,
+            yy,
+            str(value)
+        )
+
+    def right_text(
+        value,
+        x,
+        yy,
+        size=9,
+        color=WHITE,
+        bold=False
+    ):
+
+        pdf.setFillColor(color)
+
+        pdf.setFont(
+            "Helvetica-Bold" if bold
+            else "Helvetica",
+            size
+        )
+
+        pdf.drawRightString(
+            x,
+            yy,
+            str(value)
+        )
+
+    def line():
+
+        pdf.setStrokeColor(BORDER)
+
+        pdf.line(
+            LEFT,
+            y,
+            RIGHT,
+            y
+        )
+
+    def new_page_if_needed(height=100):
+
+        nonlocal y
+
+        if y < height:
+
+            pdf.showPage()
+
+            pdf.setFillColor(BG)
+
+            pdf.rect(
+                0,
+                0,
+                page_w,
+                page_h,
+                fill=1,
+                stroke=0
+            )
+
+            y = page_h - 35
+
+    # ---------------------------------------------------------
+    # MATCH SUMMARY
+    # ---------------------------------------------------------
+
+    center_text(
+        "MATCH SUMMARY",
+        y,
+        17,
+        WHITE,
+        True
+    )
+
+    y -= 18
+
+    match_no = first.get(
+        "match_number",
+        ""
+    )
+
+    if match_no:
+
+        center_text(
+            f"MATCH-{match_no}",
+            y,
+            9,
+            MUTED,
+            True
+        )
+
+        y -= 13
+
+    # ---------------------------------------------------------
+    # 🔥 TEAM VS TEAM
+    # ---------------------------------------------------------
+
+    team1 = first.get(
+        "batting",
+        "TEAM 1"
+    )
+
+    team2 = (
+        second.get("batting")
+        or first.get("bowling")
+        or "TEAM 2"
+    )
+    match_time = first.get("match_time", "")
+
+    if match_time:
+        center_text(
+            match_time,
+            y,
+            8.5,
+            MUTED,
+            False
+        )
+
+        y -= 13
+    center_text(
+        f"🔥 {team1.upper()}        VS        ⚔ {team2.upper()}",
+        y,
+        11,
+        WHITE,
+        True
+    )
+
+    y -= 16
+
+    # ---------------------------------------------------------
+    # RESULT
+    # ---------------------------------------------------------
+
+    result = second.get(
+        "match_result",
+        ""
+    )
+
+    if result:
+
+        center_text(
+            result,
+            y,
+            10,
+            GREEN,
+            True
+        )
+
+        y -= 20
+
+    line()
+
+    y -= 13
+
+    # ---------------------------------------------------------
+    # TEAM HEADER
+    # ---------------------------------------------------------
+
+    def team_header(data, team_name):
+
+        nonlocal y
+
+        new_page_if_needed(55)
+
+        # existing-style green header
+        pdf.setFillColor(HEADER)
+
+        pdf.roundRect(
+            LEFT,
+            y - 25,
+            RIGHT - LEFT,
+            25,
+            4,
+            fill=1,
+            stroke=0
+        )
+
+        text(
+            team_name.upper(),
+            LEFT + 9,
+            y - 17,
+            10,
+            WHITE,
+            True
+        )
+
+        score = data.get(
+            "score",
+            "0"
+        )
+
+        wickets = data.get(
+            "wickets",
+            "0"
+        )
+
+        over = data.get(
+            "over",
+            "0"
+        )
+
+        ball = data.get(
+            "ball",
+            "0"
+        )
+
+        right_text(
+            f"{score}-{wickets} ({over}.{ball})",
+            RIGHT - 9,
+            y - 17,
+            9,
+            WHITE,
+            True
+        )
+
+        y -= 33
+
+    # ---------------------------------------------------------
+    # TABLE HEADER
+    # ---------------------------------------------------------
+
+    def table_header(headers):
+
+        nonlocal y
+
+        new_page_if_needed(35)
+
+        pdf.setFillColor(CARD)
+
+        pdf.rect(
+            LEFT,
+            y - 20,
+            RIGHT - LEFT,
+            20,
+            fill=1,
+            stroke=0
+        )
+
+        pdf.setFillColor(YELLOW)
+
+        pdf.setFont(
+            "Helvetica-Bold",
+            7.5
+        )
+
+        # Same six-column proportion
+        widths = [
+            0.46,
+            0.108,
+            0.108,
+            0.108,
+            0.108,
+            0.108
+        ]
+
+        total_w = RIGHT - LEFT
+
+        xx = LEFT
+
+        for i, h in enumerate(headers):
+
+            ww = total_w * widths[i]
+
+            if i == 0:
+
+                pdf.drawString(
+                    xx + 5,
+                    y - 14,
+                    h
+                )
+
+            else:
+
+                pdf.drawCentredString(
+                    xx + ww / 2,
+                    y - 14,
+                    h
+                )
+
+            xx += ww
+
+        y -= 20
+
+    # ---------------------------------------------------------
+    # BATSMAN ROW
+    # ---------------------------------------------------------
+
+    def batsman_rows(data, dismissals):
+
+        nonlocal y
+
+        log = data.get(
+            "batsman_log",
+            ""
+        )
+
+        if not log:
+            return
+
+        for entry in log.split("|"):
+
+            if not entry.strip():
+                continue
+
+            try:
+
+                name, values = entry.split(
+                    "=",
+                    1
+                )
+
+                s = values.split(",")
+
+                runs = s[0] if len(s) > 0 else "0"
+                balls = s[1] if len(s) > 1 else "0"
+                fours = s[2] if len(s) > 2 else "0"
+                sixes = s[3] if len(s) > 3 else "0"
+
+                if len(s) > 4 and float(s[4]) > 0:
+
+                    sr = s[4]
+
+                elif int(balls) > 0:
+
+                    sr = f"{(int(runs) / int(balls) * 100):.2f}"
+
+                else:
+
+                    sr = "0.00"
+
+                clean = (
+                    name.split("(")[0]
+                    .strip()
+                    .lower()
+                )
+
+                dismissal = dismissals.get(
+                    clean,
+                    "not out"
+                )
+
+            except Exception:
+                continue
+
+            new_page_if_needed(30)
+
+            pdf.setFillColor(CARD)
+
+            pdf.rect(
+                LEFT,
+                y - 28,
+                RIGHT - LEFT,
+                28,
+                fill=1,
+                stroke=0
+            )
+
+            # player
+            text(
+                name,
+                LEFT + 5,
+                y - 11,
+                7.5,
+                WHITE,
+                True
+            )
+
+            text(
+                dismissal,
+                LEFT + 5,
+                y - 21,
+                6.5,
+                MUTED,
+                False
+            )
+
+            values2 = [
+                runs,
+                balls,
+                fours,
+                sixes,
+                sr
+            ]
+
+            total_w = RIGHT - LEFT
+
+            widths = [
+                .46,
+                .108,
+                .108,
+                .108,
+                .108,
+                .108
+            ]
+
+            xx = LEFT + total_w * .46
+
+            for i, val in enumerate(values2):
+
+                ww = total_w * widths[i + 1]
+
+                center_x = xx + ww / 2
+
+                pdf.setFillColor(WHITE)
+
+                pdf.setFont(
+                    "Helvetica",
+                    7.5
+                )
+
+                pdf.drawCentredString(
+                    center_x,
+                    y - 16,
+                    str(val)
+                )
+
+                xx += ww
+
+            y -= 28
+
+    # ---------------------------------------------------------
+    # SUMMARY
+    # ---------------------------------------------------------
+
+    def summary_line(data):
+
+        nonlocal y
+
+        new_page_if_needed(25)
+
+        pdf.setFillColor(CARD)
+
+        pdf.rect(
+            LEFT,
+            y - 20,
+            RIGHT - LEFT,
+            20,
+            fill=1,
+            stroke=0
+        )
+
+        text(
+            f"Extras {data.get('extra', '')}",
+            LEFT + 5,
+            y - 13,
+            7.5,
+            MUTED
+        )
+
+        right_text(
+            (
+                f"Total {data.get('score','0')}-"
+                f"{data.get('wickets','0')} "
+                f"({data.get('over','0')}."
+                f"{data.get('ball','0')})"
+            ),
+            RIGHT - 5,
+            y - 13,
+            7.5,
+            WHITE,
+            True
+        )
+
+        y -= 20
+
+    # ---------------------------------------------------------
+    # BOWLER
+    # ---------------------------------------------------------
+
+    def bowler_rows(data):
+
+        nonlocal y
+
+        log = data.get(
+            "bowler_log",
+            ""
+        )
+
+        if not log:
+            return
+
+        for entry in log.split("|"):
+
+            if not entry.strip():
+                continue
+
+            try:
+
+                name, values = entry.split(
+                    "=",
+                    1
+                )
+
+                s = values.split(",")
+
+                overs = s[0] if len(s) > 0 else "0.0"
+                runs = s[1] if len(s) > 1 else "0"
+                maiden = s[2] if len(s) > 2 else "0"
+                wickets = s[3] if len(s) > 3 else "0"
+
+                if len(s) > 4 and float(s[4]) > 0:
+
+                    er = s[4]
+
+                else:
+
+                    parts = overs.split(".")
+
+                    balls = (
+                        int(parts[0]) * 6
+                        +
+                        (
+                            int(parts[1])
+                            if len(parts) > 1
+                            else 0
+                        )
+                    )
+
+                    er = (
+                        f"{float(runs) / (balls / 6):.2f}"
+                        if balls
+                        else "0.00"
+                    )
+
+            except Exception:
+                continue
+
+            new_page_if_needed(24)
+
+            pdf.setFillColor(CARD)
+
+            pdf.rect(
+                LEFT,
+                y - 21,
+                RIGHT - LEFT,
+                21,
+                fill=1,
+                stroke=0
+            )
+
+            text(
+                name,
+                LEFT + 5,
+                y - 14,
+                7.5,
+                WHITE,
+                True
+            )
+
+            vals = [
+                overs,
+                runs,
+                maiden,
+                wickets,
+                er
+            ]
+
+            total_w = RIGHT - LEFT
+
+            widths = [
+                .46,
+                .108,
+                .108,
+                .108,
+                .108,
+                .108
+            ]
+
+            xx = LEFT + total_w * .46
+
+            for i, val in enumerate(vals):
+
+                ww = total_w * widths[i + 1]
+
+                pdf.setFillColor(WHITE)
+
+                pdf.setFont(
+                    "Helvetica",
+                    7.5
+                )
+
+                pdf.drawCentredString(
+                    xx + ww / 2,
+                    y - 14,
+                    str(val)
+                )
+
+                xx += ww
+
+            y -= 21
+
+    # ---------------------------------------------------------
+    # PARTNERSHIP
+    # ---------------------------------------------------------
+
+    def partnerships(data):
+
+        nonlocal y
+
+        if not data:
+            return
+
+        table_header([
+            "Partnerships",
+            "",
+            ""
+        ])
+
+        for p in data:
+
+            new_page_if_needed(22)
+
+            pdf.setFillColor(CARD)
+
+            pdf.rect(
+                LEFT,
+                y - 20,
+                RIGHT - LEFT,
+                20,
+                fill=1,
+                stroke=0
+            )
+
+            text(
+                p.get("striker", ""),
+                LEFT + 5,
+                y - 13,
+                7.5,
+                WHITE
+            )
+
+            center_text(
+                f"{p.get('runs','0')} ({p.get('balls','0')})",
+                y - 13,
+                7.5,
+                GREEN,
+                True
+            )
+
+            right_text(
+                p.get("nonStriker", ""),
+                RIGHT - 5,
+                y - 13,
+                7.5,
+                WHITE
+            )
+
+            y -= 20
+
+    # ---------------------------------------------------------
+    # FALL OF WICKETS
+    # ---------------------------------------------------------
+
+    def fow_rows(data):
+
+        nonlocal y
+
+        if not data:
+            return
+
+        table_header([
+            "Fall of Wickets",
+            "Score",
+            "Over",
+            "",
+            "",
+            ""
+        ])
+
+        for w in data:
+
+            new_page_if_needed(22)
+
+            pdf.setFillColor(CARD)
+
+            pdf.rect(
+                LEFT,
+                y - 20,
+                RIGHT - LEFT,
+                20,
+                fill=1,
+                stroke=0
+            )
+
+            text(
+                w.get("player", ""),
+                LEFT + 5,
+                y - 13,
+                7.5,
+                WHITE
+            )
+
+            center_text(
+                (
+                    f"{w.get('run','0')}-"
+                    f"{w.get('wicket','0')}"
+                ),
+                y - 13,
+                7.5,
+                WHITE,
+                True
+            )
+
+            right_text(
+                w.get("over", ""),
+                RIGHT - 5,
+                y - 13,
+                7.5,
+                WHITE
+            )
+
+            y -= 20
+
+    # =========================================================
+    # FIRST INNINGS
+    # =========================================================
+
+    team_header(
+        first,
+        team1
+    )
+
+    table_header([
+        "Batsman",
+        "R",
+        "B",
+        "4s",
+        "6s",
+        "SR"
+    ])
+
+    batsman_rows(
+        first,
+        first_dismissals
+    )
+
+    summary_line(first)
+
+    table_header([
+        "Bowler",
+        "O",
+        "R",
+        "M",
+        "W",
+        "ER"
+    ])
+
+    bowler_rows(first)
+
+    partnerships(
+        first_partnerships
+    )
+
+    fow_rows(
+        first_fow
+    )
+
+    # =========================================================
+    # SECOND INNINGS
+    # =========================================================
+
+    if second.get("score"):
+
+        y -= 12
+
+        team_header(
+            second,
+            team2
+        )
+
+        table_header([
+            "Batsman",
+            "R",
+            "B",
+            "4s",
+            "6s",
+            "SR"
+        ])
+
+        batsman_rows(
+            second,
+            second_dismissals
+        )
+
+        summary_line(second)
+
+        table_header([
+            "Bowler",
+            "O",
+            "R",
+            "M",
+            "W",
+            "ER"
+        ])
+
+        bowler_rows(second)
+
+        partnerships(
+            second_partnerships
+        )
+
+        fow_rows(
+            second_fow
+        )
+
+    # =========================================================
+    # PLAYER OF MATCH
+    # =========================================================
+
+    pom = second.get(
+        "Man_of_the_Match",
+        ""
+    )
+
+    if pom:
+
+        y -= 12
+
+        new_page_if_needed(45)
+
+        pdf.setFillColor(CARD)
+
+        pdf.roundRect(
+            LEFT,
+            y - 35,
+            RIGHT - LEFT,
+            35,
+            5,
+            fill=1,
+            stroke=0
+        )
+
+        center_text(
+            "PLAYER OF THE MATCH",
+            y - 13,
+            7.5,
+            MUTED,
+            True
+        )
+
+        center_text(
+            pom,
+            y - 27,
+            10,
+            GREEN,
+            True
+        )
+
+        y -= 45
+
+    # =========================================================
+    # FOOTER
+    # =========================================================
+
+    pdf.setFillColor(MUTED)
+
+    pdf.setFont(
+        "Helvetica",
+        6.5
+    )
+
+    pdf.drawCentredString(
+        page_w / 2,
+        15,
+        "Cricket Match Summary"
+    )
+
+    pdf.save()
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=(
+            f"Match_{match_no or 'Summary'}.pdf"
+        ),
+        mimetype="application/pdf"
+    )

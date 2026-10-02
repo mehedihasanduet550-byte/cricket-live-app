@@ -1,4 +1,4 @@
-players=9
+players=3
 noball=1
 noball_reball=1
 noball_run=1

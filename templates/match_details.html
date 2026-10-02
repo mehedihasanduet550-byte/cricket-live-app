@@ -74,13 +74,18 @@
         <div class="player-left">
 
             <div class="avatar" style="width:120px;height:120px;">
-                <img loading="lazy" src="/static/images/players/{{ pom | replace(' ', '%20') }}.webp"
+                {%- set pom_photo = player_photo_url(pom) %}
+                {%- if pom_photo %}
+                <img loading="lazy" src="{{ pom_photo }}"
                     style="width:100%;height:100%;object-fit:cover;"
                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                 <div class="initial">{{ pom[0] if pom else '?' }}</div>
+                {%- else %}
+                <div class="initial" style="display:flex">{{ pom[0] if pom else '?' }}</div>
+                {%- endif %}
             </div>
 
-            <span>{{ pom }}</span>
+            <span onclick="location.href='/player-details?name={{ pom }}'" style="cursor:pointer;">{{ pom }}</span>
         </div>
     </div>
 
@@ -112,7 +117,7 @@
 
         <div class="table-row">
             <div>
-                <div class="name">{{ name }}</div>
+                <div class="name" onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">{{ name }}</div>
 
                 <!-- ✅ FIXED DISMISSAL -->
                 {% set clean_name = name.split('(')[0].strip().lower() %}
@@ -156,7 +161,7 @@
         {% set s = b.split("=")[1].split(",") %}
 
         <div class="table-row">
-            <span>{{ name }}</span>
+            <span onclick="window.location='/player-details?name={{ name }}'" style="cursor:pointer">{{ name }}</span>
             <span>{{ s[0] }}</span>
             <span>{{ s[1] }}</span>
             <span>{{ s[2] }}</span>
@@ -256,7 +261,7 @@
 
         <div class="table-row">
             <div>
-                <div class="name">{{ name }}</div>
+                <div class="name" onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">{{ name }}</div>
 
                 <!-- ✅ FIXED DISMISSAL -->
                 {% set clean_name = name.split('(')[0].strip().lower() %}
@@ -300,7 +305,9 @@
         {% set s = b.split("=")[1].split(",") %}
 
         <div class="table-row">
-            <span>{{ name }}</span>
+            <span onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">
+                {{ name }}
+            </span>
             <span>{{ s[0] }}</span>
             <span>{{ s[1] }}</span>
             <span>{{ s[2] }}</span>
@@ -335,9 +342,9 @@
 
     <div class="partnership-row">
 
-        <div class="partnership-left">
-            {{ p.striker }}
-        </div>
+        <div class="name" onclick="location.href='/player-details?name={{ p.striker }}'" style="cursor:pointer;">
+                {{ p.striker }}
+            </div>
 
         <div class="partnership-center">
             {{ p.runs }} ({{ p.balls }})
@@ -417,12 +424,19 @@
             <div class="player-row">
                 <div class="player-left">
                     <div class="avatar">
-                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                        {%- set photo = player_photo_url(p.name.split(',')[0]) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- endif %}
                     </div>
                     <div>
-                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-name" onclick="location.href='/player-details?name={{ p.name }}'" style="cursor:pointer;">
+                            {{ p.name }}
+                        </div>
                         <div class="p-role">{{ p.role }}</div>
                     </div>
                 </div>
@@ -436,12 +450,19 @@
             <div class="player-row">
                 <div class="player-left">
                     <div class="avatar">
-                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                        {%- set photo = player_photo_url(p.name.split(',')[0]) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- endif %}
                     </div>
                     <div>
-                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-name" onclick="location.href='/player-details?name={{ p.name }}'" style="cursor:pointer;">
+                            {{ p.name }}
+                        </div>
                         <div class="p-role">{{ p.role }}</div>
                     </div>
                 </div>
@@ -460,12 +481,19 @@
             <div class="player-row">
                 <div class="player-left">
                     <div class="avatar">
-                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                        {%- set photo = player_photo_url(p.name.split(',')[0]) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- endif %}
                     </div>
                     <div>
-                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-name" onclick="location.href='/player-details?name={{ p.name }}'" style="cursor:pointer;">
+                            {{ p.name }}
+                        </div>
                         <div class="p-role">{{ p.role }}</div>
                     </div>
                 </div>
@@ -479,12 +507,19 @@
             <div class="player-row">
                 <div class="player-left">
                     <div class="avatar">
-                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                        {%- set photo = player_photo_url(p.name.split(',')[0]) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- endif %}
                     </div>
                     <div>
-                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-name" onclick="location.href='/player-details?name={{ p.name }}'" style="cursor:pointer;">
+                            {{ p.name }}
+                        </div>
                         <div class="p-role">{{ p.role }}</div>
                     </div>
                 </div>
@@ -503,12 +538,17 @@
             <div class="player-row">
                 <div class="player-left">
                     <div class="avatar">
-                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                        {%- set photo = player_photo_url(p.name.split(',')[0]) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- endif %}
                     </div>
                     <div>
-                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-name" onclick="location.href='/player-details?name={{ p.name }}'" style="cursor:pointer;">{{ p.name }}</div>
                         <div class="p-role">{{ p.role }}</div>
                     </div>
                 </div>
@@ -522,12 +562,19 @@
             <div class="player-row">
                 <div class="player-left">
                     <div class="avatar">
-                        <img loading="lazy" src="/static/images/players/{{ p.name.split(',')[0] }}.webp"
+                        {%- set photo = player_photo_url(p.name.split(',')[0]) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="initial">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">{{ p.name.split('(')[0].strip()[0] }}</div>
+                        {%- endif %}
                     </div>
                     <div>
-                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-name" onclick="location.href='/player-details?name={{ p.name }}'" style="cursor:pointer;">
+                            {{ p.name }}
+                        </div>
                         <div class="p-role">{{ p.role }}</div>
                     </div>
                 </div>
@@ -641,7 +688,7 @@
     </div>
 
     <!-- SECOND INNINGS -->
-    {% if second.over_log %}
+    {% if second.over_log or second.this_over %}
 
     <div class="over-card">
 

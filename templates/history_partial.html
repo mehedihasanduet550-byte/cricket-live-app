@@ -1,6 +1,21 @@
 {% for m in matches %}
 
 <div class="history-card" onclick="goDetails('{{ m.file }}') "data-file="{{ m.file }}">
+    <div class="match-number"
+        style="position:absolute;
+                top:10px;
+                left:50%;
+                transform:translateX(-50%);
+                width:max-content;
+                font-size:12px;
+                font-weight:bold;
+                color:#fff;
+                background:#222;
+                padding:4px 8px;
+                border-radius:6px;
+                z-index:99999;">
+        MATCH-{{ "%02d"|format(m.match_number|int) }}
+    </div>
     <div class="status-badge {{ m.status|lower }}">
         {{ m.status }}
     </div>
@@ -86,7 +101,23 @@
         <a href="/delete-match/{{ m.file }}"
         class="delete-icon"
         onclick="event.stopPropagation(); return confirm('Delete this match?')">
-        🗑
+        🗑 Delete Match
+        </a>
+        <a href="{{ url_for('download_match_pdf', filename=m.file) }}"
+           onclick="event.stopPropagation();"
+           style="
+                display:inline-flex;
+                align-items:center;
+                gap:5px;
+                padding:5px 9px;
+                background:#222;
+                color:white;
+                text-decoration:none;
+                border-radius:6px;
+                font-size:12px;
+                font-weight:bold;
+           ">
+            📥 Downld Mth Smry
         </a>
         {% endif %}
 

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+    <title>New Match</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<head>
+    <!-- 🔥 Navigation -->
+<div class="nav">
+    <a href="/live-score">Back</a>
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+    
+</div>
+<h2 class="fixture-title">🏏 New Match</h2>
+
+<div class="score-form">
+
+    <!-- Teams -->
+<label>Teams</label>
+<div class="score-card">
+    <input list="teamList" id="hostTeam" placeholder="Host Team">
+    <input list="teamList" id="visitorTeam" placeholder="Visitor Team">
+</div>
+
+<datalist id="teamList">
+    {% for t in teams %}
+        <option value="{{ t }}">
+    {% endfor %}
+</datalist>
+
+<!-- Toss -->
+<label>Toss won by?</label>
+<div class="score-card radio-group">
+    <label>
+        <input type="radio" name="toss" value="host">
+        <span id="hostLabel">Host Team</span>
+    </label>
+
+    <label>
+        <input type="radio" name="toss" value="visitor">
+        <span id="visitorLabel">Visitor Team</span>
+    </label>
+</div>
+
+<!-- Opt -->
+<label>Opted to?</label>
+<div class="score-card radio-group">
+    <label><input type="radio" name="opt" value="bat"> Bat</label>
+    <label><input type="radio" name="opt" value="bowl"> Bowl</label>
+</div>
+
+<!-- Overs -->
+<label>Overs?</label>
+<div class="score-card">
+    <input type="number" id="overs" placeholder="16">
+</div>
+
+<!-- Buttons -->
+<div class="score-actions">
+    <a href="/advanced-settings" class="adv-btn">Advanced Settings</a>
+
+    <button class="start-btn" onclick="validateMatch2()">
+        Start match
+    </button>
+</div>
+
+
+</div>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+<script src="{{ url_for('static', filename='css/js/script2.js') }}"></script>
+</body>
+</html>

@@ -341,7 +341,27 @@ window.location.href =
 
 }
 </script>
+<script src="{{ url_for('static', filename='css/js/scoring-engine.js') }}"></script>
 <script src="{{ url_for('static', filename='css/js/script.js') }}"></script>
+<script>
+// If a wicket on the previous ball ended the innings/match, that was confirmed on the
+// Fall-of-wicket page (see scoring-engine.js / script.js) and we were sent back here
+// with a flag in the URL. Finish the job: pop up the innings-break or match-result screen.
+(function () {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("inningsBreak") === "1") {
+        const target = parseInt(localStorage.getItem("inningsEndTarget")) || 0;
+        const overs = parseInt(localStorage.getItem("inningsEndOvers")) || 0;
+        localStorage.removeItem("inningsEndTarget");
+        localStorage.removeItem("inningsEndOvers");
+        window.addEventListener("load", function () { openInningsModal(target, overs); });
+    } else if (params.get("matchResult") === "1") {
+        const text = localStorage.getItem("pendingResultText") || "";
+        localStorage.removeItem("pendingResultText");
+        if (text) window.addEventListener("load", function () { finishMatch(text); });
+    }
+})();
+</script>
 </body>
 <script>
 

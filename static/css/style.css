@@ -1688,7 +1688,7 @@ input {
 
 .result-text{
     padding:10px;
-    color:#43ee0a;
+    color:#010b04;
 }
 
 .team-header{
@@ -2190,4 +2190,35 @@ input {
 
 .fow-header span:nth-child(3){
     text-align:right;
+}
+.profile-img{
+    width:190px !important;
+    height:190px !important;
+    border-radius:50%;
+    object-fit:cover;
+}
+.pdf-matchup {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    width: 100%;
+    margin: 15px 0;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.pdf-matchup > span:first-child {
+    text-align: right;
+    padding-right: 35px;
+}
+
+.pdf-matchup .vs {
+    text-align: center;
+    padding: 0 10px;
+    font-weight: 800;
+}
+
+.pdf-matchup > span:last-child {
+    text-align: left;
+    padding-left: 35px;
 }

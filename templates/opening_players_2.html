@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Opening Players</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+ <!-- 🔥 Navigation -->
+<div class="nav">
+    <a href="/new-match-2">Back</a>
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+    
+</div>
+<h2 class="fixture-title">🏏 Select Opening Players</h2>
+
+<div class="open-form">
+
+   <!-- Striker -->
+<label>Striker</label>
+<div class="open-card">
+    <input type="text" id="striker" list="playerList" placeholder="Player name">
+</div>
+
+<!-- Non-striker -->
+<label>Non-striker</label>
+<div class="open-card">
+    <input type="text" id="nonStriker" list="playerList" placeholder="Player name">
+</div>
+
+<!-- 🔥 DATALIST HERE -->
+<datalist id="playerList">
+    {% for p in players %}
+        <option value="{{ p }}">
+    {% endfor %}
+</datalist>
+
+<!-- Bowler -->
+<label>Opening bowler</label>
+<div class="open-card">
+    <input type="text" id="bowler" list="bowlingList" placeholder="Player name">
+</div>
+<!-- 🔥 bowling players -->
+<!-- bowling -->
+<datalist id="bowlingList">
+    {% for p in bowlers %}
+        <option value="{{ p }}">
+    {% endfor %}
+</datalist>
+
+<!-- Start -->
+<button class="start-btn" onclick="validateOpening2()">
+    Start match
+</button>
+</div>
+<script src="{{ url_for('static', filename='css/js/script2.js') }}"></script>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+</body>
+</html>

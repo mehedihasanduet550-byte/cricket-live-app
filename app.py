@@ -1,4 +1,11 @@
 from datetime import datetime
+from flask import send_file
+from io import BytesIO
+from playwright.sync_api import sync_playwright
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.pdfbase.pdfmetrics import stringWidth
 import pytz
 from re import match
 from flask import request, jsonify
@@ -7,9 +14,107 @@ from flask import request, redirect, session
 from flask import Flask, render_template, request, redirect, session
 from soupsieve import match
 app = Flask(__name__)
+
+# Two separate locks: one per match. update-score / save-wicket / live-match / undo /
+# start-second / save-result all read data/current_match*.txt then rewrite the whole
+# file. Two requests for the SAME match arriving close together (a fast double-tap,
+# or the browser retrying a slow request) could interleave and the second write would
+# erase what the first one just saved -- that included wicket entries sometimes
+# disappearing from the summary. Two locks (not one) so match 1 and match 2 never
+# wait on each other.
+import threading, functools
+MATCH_LOCKS = {1: threading.RLock(), 2: threading.RLock()}
+
+def locked(match_no):
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*a, **k):
+            with MATCH_LOCKS[match_no]:
+                return fn(*a, **k)
+        return wrapper
+    return deco
+
+
+#  Player photos are looked up everywhere else in the site purely by filename
+#  convention ("<player name>.webp"), with nothing checking whether that file is
+#  actually there. Two separate problems that caused: (1) a deleted photo kept showing
+#  up on other pages, because the browser had the old image cached and nothing ever
+#  told it to ask the server again; (2) replacing a photo (same player, new picture,
+#  same filename) needed a hard refresh to show up for the same reason. This Jinja
+#  helper fixes both: it builds the photo URL with a "?v=<file's last-modified time>"
+#  tag, so the URL itself changes whenever the underlying file actually changes,
+#  forcing browsers to fetch the new one automatically -- no hard refresh needed. If
+#  the file doesn't exist at all (deleted, never uploaded), it returns None so the
+#  template can skip the <img> tag entirely instead of pointing at a dead/cached file.
+def player_photo_url(name):
+    if not name:
+        return None
+    path = os.path.join("static", "images", "players", f"{name}.webp")
+    try:
+        v = int(os.path.getmtime(path))
+    except OSError:
+        return None
+    from urllib.parse import quote
+    return f"/static/images/players/{quote(name)}.webp?v={v}"
+
+app.jinja_env.globals["player_photo_url"] = player_photo_url
+
+#  Match PDF downloads were slow to even START because download_match_pdf() launched a
+#  brand new headless Chromium browser from scratch on every single click -- that alone
+#  typically costs a second or more, on top of actually rendering the page. Keep ONE
+#  Chromium instance running for the life of the server instead, and just open/close a
+#  lightweight page in it per download. _PDF_LOCK serialises use of it (Playwright's
+#  sync API isn't safe to drive from two threads at once); it does not block anything
+#  else in the app.
+_PDF_LOCK = threading.Lock()
+_pdf_playwright = None
+_pdf_browser = None
+
+def _get_pdf_browser():
+    global _pdf_playwright, _pdf_browser
+    if _pdf_browser is None:
+        _pdf_playwright = sync_playwright().start()
+        _pdf_browser = _pdf_playwright.chromium.launch(headless=True)
+    return _pdf_browser
+
+def render_match_pdf(url):
+    """Render `url` to PDF bytes using the shared browser, restarting it once if it
+    has died (e.g. after a crash) rather than failing the whole download."""
+    global _pdf_browser
+    with _PDF_LOCK:
+        for attempt in (1, 2):
+            try:
+                browser = _get_pdf_browser()
+                page = browser.new_page(
+                    viewport={"width": 1280, "height": 1800},
+                    device_scale_factor=1
+                )
+                try:
+                    page.goto(url, wait_until="load")
+                    page.wait_for_timeout(300)
+                    return page.pdf(
+                        format="A4",
+                        print_background=True,
+                        prefer_css_page_size=True,
+                        margin={"top": "8mm", "right": "8mm", "bottom": "8mm", "left": "8mm"}
+                    )
+                finally:
+                    page.close()
+            except Exception:
+                if attempt == 2:
+                    raise
+                # the shared browser may have crashed/closed -- throw it away and
+                # retry exactly once with a freshly launched one
+                try:
+                    _pdf_browser.close()
+                except Exception:
+                    pass
+                _pdf_browser = None
+
 app.config['SEND_FILE_MAX_AGE_DEFAULT']=31536000
 from flask_compress import Compress
 Compress(app)
+from flask import  url_for
 import os
 from werkzeug.utils import secure_filename
 from PIL import Image
@@ -59,7 +164,13 @@ def get_db():
 
     return conn
 
-def save_as_webp(file, folder):
+def save_as_webp(file, folder, max_dim=None):
+    #  max_dim: if given, shrink the image so neither side exceeds this many pixels
+    #  (aspect ratio kept), before saving. Uploads straight from a phone camera can be
+    #  several thousand pixels wide; saved at full size, every place that embeds many
+    #  of these at once (the match scorecard PDF especially) ends up huge even though
+    #  the photo is only ever shown as a small circle avatar. This only resizes when a
+    #  caller asks for it, so banners/news images that DO need to stay large are unaffected.
 
     img = Image.open(file)
 
@@ -68,6 +179,9 @@ def save_as_webp(file, folder):
         img = img.convert("RGBA")
     else:
         img = img.convert("RGB")
+
+    if max_dim:
+        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
 
 
     filename = os.path.splitext(
@@ -421,6 +535,105 @@ def append_history(line):
         f.write(old)
 
     os.replace(temp, "data/history.txt")
+
+def append_history_2(line):
+
+    temp = "data/history_temp_2.txt"
+
+    old = ""
+
+    if os.path.exists("data/history_2.txt"):
+
+        with open("data/history_2.txt", "r") as f:
+            old = f.read()
+
+    old += line + "\n"
+
+    with open(temp, "w") as f:
+        f.write(old)
+
+    os.replace(temp, "data/history_2.txt")
+
+# =========================================================
+# 🔢 MATCH NUMBER SYSTEM
+# =========================================================
+def ensure_match_numbers():
+
+    folder = "data/all_match"
+
+    files = [
+        f for f in os.listdir(folder)
+        if f.endswith("_1st.txt")
+    ]
+
+    # পুরোনো ম্যাচ আগে
+    files.sort(
+        key=lambda f: os.path.getmtime(
+            os.path.join(folder, f)
+        )
+    )
+
+    used_numbers = set()
+    missing_files = []
+
+    # আগে যেসব match number already আছে সেগুলো খুঁজে বের করি
+    for file in files:
+
+        path = os.path.join(folder, file)
+
+        data = {}
+
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        data[k] = v
+        except:
+            pass
+
+        if data.get("match_number"):
+            try:
+                used_numbers.add(int(data["match_number"]))
+            except:
+                missing_files.append(path)
+        else:
+            missing_files.append(path)
+
+    # নতুন number কোথা থেকে শুরু হবে
+    next_number = max(used_numbers, default=0) + 1
+
+    # যেসব পুরোনো match-এর number নেই,
+    # সেগুলোকে পুরোনো থেকে নতুন order-এ number দিই
+    for path in missing_files:
+
+        while next_number in used_numbers:
+            next_number += 1
+
+        with open(path, "a") as f:
+            f.write(f"match_number={next_number}\n")
+
+        used_numbers.add(next_number)
+        next_number += 1
+
+    # সব match-এর final number ফেরত দিই
+    result = {}
+
+    for file in files:
+
+        path = os.path.join(folder, file)
+
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    if line.startswith("match_number="):
+                        number = line.strip().split("=", 1)[1]
+                        result[file] = int(number)
+                        break
+        except:
+            pass
+
+    return result
 # 🔥 ensure folder exists
 os.makedirs("data/all_match", exist_ok=True)
 
@@ -528,7 +741,7 @@ def home():
 
     banner = random.choice(banners) if banners else None
 
-    live_match = None
+    live_matches = []
     completed_match = None
 
     try:
@@ -546,6 +759,17 @@ def home():
             if locked in files:
                 files = [locked]
 
+        match2_file = ""
+
+        try:
+            with open("data/current_match_2.txt") as f:
+                for line in f:
+                    if line.startswith("first_match_file="):
+                        match2_file = os.path.basename(
+                            line.strip().split("=", 1)[1]
+                        )
+        except:
+            pass
         for file in files:
             path = os.path.join(folder, file)
 
@@ -616,11 +840,19 @@ def home():
                 "toss": first.get("toss"),
                 "opt": first.get("opt"),
                 "innings_break": innings_break,
+                "file": file,
             }
+            if file == match2_file:
+                match_data["page"] = "/match-2"
+            else:
+                match_data["page"] = "/match"
+            if not result_text:
 
-            if not result_text and live_match is None:
                 match_data["status"] = "LIVE"
-                live_match = match_data
+                live_matches.append(match_data)
+
+                if len(live_matches) >= 2:
+                    break
 
                 # 🔥 NEW LIVE MATCH → LOCK UPDATE (ADD HERE)
                 try:
@@ -663,7 +895,7 @@ def home():
 
         admin=session.get("admin"),
 
-        live_match=live_match
+        live_matches=live_matches
     )
 
     resp = app.make_response(response)
@@ -690,7 +922,7 @@ def home_live_data():
 
         return home_cache["data"]
 
-    live_match = None
+    live_matches = []
     completed_match = None
 
     try:
@@ -705,15 +937,17 @@ def home_live_data():
         files = [f for f in files if f.endswith("_1st.txt")]
 
         # 🔥 LOCK LOAD
-        if os.path.exists(lock_file):
+        match2_file = ""
 
-            with open(lock_file) as f:
-
-                locked = f.read().strip()
-
-            if locked in files:
-
-                files = [locked]
+        try:
+            with open("data/current_match_2.txt") as f:
+                for line in f:
+                    if line.startswith("first_match_file="):
+                        match2_file = os.path.basename(
+                            line.strip().split("=",1)[1]
+                        )
+        except:
+            pass
 
         for file in files:
 
@@ -835,17 +1069,24 @@ def home_live_data():
                 "opt": first.get("opt"),
 
                 "innings_break": innings_break,
+                "file": file,
             }
-
+            if file == match2_file:
+                match_data["page"] = "/match-2"
+            else:
+                match_data["page"] = "/match"
             # =========================
             # 🔥 LIVE
             # =========================
 
-            if not result_text and live_match is None:
+            if not result_text:
 
                 match_data["status"] = "LIVE"
 
-                live_match = match_data
+                live_matches.append(match_data)
+
+                if len(live_matches) >= 2:
+                    break
 
             # =========================
             # 🔥 COMPLETED
@@ -857,17 +1098,16 @@ def home_live_data():
 
                 completed_match = match_data
 
-            if live_match and completed_match:
-                break
+           
 
-        live_match = live_match
+       
 
     except:
         pass
 
     response = render_template(
         "home_live_partial.html",
-        live_match=live_match
+        live_matches=live_matches
     )
 
     home_cache["data"] = response
@@ -1104,6 +1344,235 @@ def match_page():
         t2_staff=t2_staff
     )
 
+@app.route("/match-2")
+def match_page_2():
+
+    import os, json, ast
+    from flask import request
+
+    data = {}
+
+    # 🔵 current match
+    try:
+        with open("data/current_match_2.txt") as f:
+
+            for line in f:
+
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    data[k] = v
+
+    except:
+        pass
+
+    # 🔥 =========================
+    # 🔥 GET FILE FROM URL
+    # 🔥 =========================
+
+    file = request.args.get("file")
+
+    first = {}
+    second = {}
+
+    try:
+
+        if file:
+
+            path = os.path.join("data/all_match", file)
+
+        else:
+
+            folder = "data/all_match"
+
+            files = sorted(
+                [f for f in os.listdir(folder) if f.endswith("_1st.txt")],
+                key=lambda x: os.path.getmtime(os.path.join(folder, x)),
+                reverse=True
+            )
+
+            path = os.path.join(folder, files[0]) if files else None
+
+        # 🔥 =========================
+        # 🔥 LOAD FIRST INNINGS
+        # 🔥 =========================
+
+        if path and os.path.exists(path):
+
+            with open(path) as f:
+
+                for line in f:
+
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        first[k] = v
+
+            # 🔥 =========================
+            # 🔥 LOAD SECOND INNINGS
+            # 🔥 =========================
+
+            second_file = path.replace("_1st.txt", "_2nd.txt")
+
+            if os.path.exists(second_file):
+
+                with open(second_file) as sf:
+
+                    for line in sf:
+
+                        if "=" in line:
+                            k, v = line.strip().split("=", 1)
+                            second[k] = v
+
+    except:
+        pass
+
+    # 🔥 =========================
+    # 🔥 SAFE JSON
+    # 🔥 =========================
+
+    def safe_json(text):
+
+        try:
+            return json.loads(text)
+
+        except:
+
+            try:
+                return ast.literal_eval(text)
+
+            except:
+                return []
+
+    # 🔥 wickets
+    first["wickets_log"] = safe_json(first.get("wickets_log", "[]"))
+    second["wickets_log"] = safe_json(second.get("wickets_log", "[]"))
+
+    first["partnerships"] = safe_json(first.get("partnerships", "[]"))
+    second["partnerships"] = safe_json(second.get("partnerships", "[]"))
+    # =====================
+    # 🔥 FALL OF WICKETS
+    # =====================
+
+    first["fall_of_wickets"] = safe_json(
+        first.get("fall_of_wickets", "[]")
+    )
+
+    second["fall_of_wickets"] = safe_json(
+        second.get("fall_of_wickets", "[]")
+    )
+
+
+    # 🔥 =========================
+    # 🔥 DISMISSALS
+    # 🔥 =========================
+
+    def clean(n):
+
+        return n.split('(')[0].strip().lower()
+
+    def build_map(log):
+
+        d = {}
+
+        for w in log:
+
+            key = clean(w.get("batsman", ""))
+
+            t = (w.get("type") or "").lower()
+
+            bowler = w.get("bowler", "")
+
+            if t == "bowled":
+                d[key] = f"b {bowler}"
+
+            elif "catch" in t:
+                d[key] = f"c b {bowler}"
+
+            elif "run out" in t:
+                d[key] = "run out"
+
+            elif t == "lbw":
+                d[key] = f"lbw b {bowler}"
+
+            else:
+                d[key] = w.get("type", "out")
+
+        return d
+
+    first["dismissals"] = build_map(first["wickets_log"])
+    second["dismissals"] = build_map(second["wickets_log"])
+
+    # 🔥 =========================
+    # 🔥 SQUADS
+    # 🔥 =========================
+
+    def find_squad_key(data, team):
+
+        team = team.lower()
+
+        for k in data.keys():
+
+            if k.lower() == team + "_squad":
+                return k
+
+        return team + "_squad"
+
+    host = first.get("host", "")
+    visitor = first.get("visitor", "")
+
+    host_key = find_squad_key(first, host)
+    visitor_key = find_squad_key(first, visitor)
+
+    # 🔥 parse squads
+    first[host_key] = safe_json(first.get(host_key, "[]"))
+    first[visitor_key] = safe_json(first.get(visitor_key, "[]"))
+
+    # 🔥 split squads
+    def split_squad(squad):
+
+        playing = []
+        bench = []
+        staff = []
+
+        for p in squad:
+
+            extra = p.get("extra", [])
+
+            if "bench" in extra:
+                bench.append(p)
+
+            elif "stf" in extra:
+                staff.append(p)
+
+            else:
+                playing.append(p)
+
+        return playing, bench, staff
+
+    t1_play, t1_bench, t1_staff = split_squad(first.get(host_key, []))
+    t2_play, t2_bench, t2_staff = split_squad(first.get(visitor_key, []))
+
+    # 🔥 =========================
+    # 🔥 RETURN
+    # 🔥 =========================
+
+    return render_template(
+        "match_2.html",
+
+        data=data,
+
+        first=first,
+        second=second,
+
+        t1_play=t1_play,
+        t1_bench=t1_bench,
+        t1_staff=t1_staff,
+
+        t2_play=t2_play,
+        t2_bench=t2_bench,
+        t2_staff=t2_staff
+    )
+
+
 @app.route("/match-live-data")
 def match_live_data():
 
@@ -1111,6 +1580,22 @@ def match_live_data():
 
     try:
         with open("data/current_match.txt") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    data[k] = v
+    except:
+        pass
+
+    return render_template("match_live_partial.html", data=data)
+
+@app.route("/match-live-data-2")
+def match_live_data_2():
+
+    data = {}
+
+    try:
+        with open("data/current_match_2.txt") as f:
             for line in f:
                 if "=" in line:
                     k, v = line.strip().split("=", 1)
@@ -1488,9 +1973,13 @@ def upload_player_image():
 
             filename = file.filename
 
+            #  Player photos only ever show up as small circle avatars (~120px at
+            #  most, including the match PDF), so there's no reason to keep them at
+            #  full camera resolution -- that's most of what was making the PDF big.
             save_as_webp(
             file,
-            app.config["UPLOAD_FOLDER"]
+            app.config["UPLOAD_FOLDER"],
+            max_dim=500
             )
 
     return redirect("/player-images")
@@ -1503,9 +1992,19 @@ def rename_image():
     folder = app.config["UPLOAD_FOLDER"]
 
     old_path = os.path.join(folder, old_name)
+
+    #  Every player photo MUST end in .webp -- that's the only extension the rest of
+    #  the site (team page, match scorecard, player page) ever looks for, built as
+    #  "<player name>.webp" with nothing checking whether the file is actually there
+    #  first. The rename prompt just pre-fills the OLD filename (which already ends in
+    #  .webp from the upload step); if the extension got dropped or changed while typing
+    #  a new name, the rename itself would still "succeed" on disk, but the photo would
+    #  silently stop showing up everywhere else in the site. So: always force .webp on
+    #  the new name, no matter what was actually typed.
+    new_base = os.path.splitext(new_name)[0]
+    new_name = new_base + ".webp"
     new_path = os.path.join(folder, new_name)
 
-    # extension same rakha better
     if os.path.exists(old_path):
         os.rename(old_path, new_path)
 
@@ -1677,9 +2176,12 @@ def upload_team_logo():
             name, ext = os.path.splitext(filename)
             filename = f"{name}_{int(time.time())}{ext}"
 
+        #  Same reasoning as player photos -- a team logo is only ever shown as a
+        #  small badge, never at camera/original resolution.
         save_as_webp(
         file,
-        "static/images/teams"
+        "static/images/teams",
+        max_dim=500
         )
 
     return redirect("/team-logos")
@@ -2053,6 +2555,15 @@ def new_match():
     teams = [f.replace(".txt", "") for f in files if f.endswith(".txt")]
     return render_template("new_match.html", teams=teams)
 
+@app.route("/new-match-2")
+def new_match_2():
+    if not session.get("admin"):
+        return redirect("/login")
+
+    files = os.listdir("data/teamlist")
+    teams = [f.replace(".txt", "") for f in files if f.endswith(".txt")]
+
+    return render_template("new_match_2.html", teams=teams)
 
 @app.route("/opening-players")
 def opening_players():
@@ -2102,6 +2613,77 @@ def opening_players():
         players=players,
         bowlers=bowlers
     )
+@app.route("/opening-players-2")
+def opening_players_2():
+    if not session.get("admin"):
+        return redirect("/login")
+
+    data = {}
+
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            key, value = line.strip().split("=", 1)
+            data[key] = value
+
+    batting_team = data["batting"]
+    bowling_team = data["bowling"]
+
+    with open(f"data/teamlist/{batting_team}.txt") as f:
+        players = []
+
+        for line in f:
+
+            parts = line.strip().split(",")
+
+            name = parts[0].strip()
+
+            roles = [
+                p.strip().lower()
+                for p in parts[1:]
+            ]
+
+            if (
+                "stf" in roles
+                or
+                "bench" in roles
+                or
+                "coach" in roles
+            ):
+                continue
+
+            players.append(name)
+
+    with open(f"data/teamlist/{bowling_team}.txt") as f:
+
+        bowlers = []
+
+        for line in f:
+
+            parts = line.strip().split(",")
+
+            name = parts[0].strip()
+
+            roles = [
+                p.strip().lower()
+                for p in parts[1:]
+            ]
+
+            if (
+                "stf" in roles
+                or
+                "bench" in roles
+                or
+                "coach" in roles
+            ):
+                continue
+
+            bowlers.append(name)
+
+    return render_template(
+        "opening_players_2.html",
+        players=players,
+        bowlers=bowlers
+    )
 
 @app.route("/save-match")
 def save_match():
@@ -2147,13 +2729,18 @@ def save_match():
     # 🔥 MATCH FILE
     # 🔥 MATCH FILES
 
-    base_name = f"data/all_match/{host}_vs_{visitor}".replace(" ", "_")
+    match_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    base_name = (f"data/all_match/"f"{host}_vs_{visitor}_{match_id}").replace(" ", "_")
 
     first_file = base_name + "_1st.txt"
     second_file = base_name + "_2nd.txt"
 
     open(first_file, "a").close()
     open(second_file, "a").close()
+    # 🔢 GET PERMANENT MATCH NUMBER
+    match_numbers = ensure_match_numbers()
+    match_number = match_numbers[os.path.basename(first_file)]
 
     # 🔥 MATCH TIME
     bd_time = datetime.now(pytz.timezone("Asia/Dhaka"))
@@ -2254,6 +2841,7 @@ def save_match():
         "first_match_file": first_file,
         "second_match_file": second_file,
         "match_time": match_time,
+        "match_number": match_number,
 
         "wickets_log": "[]",
 
@@ -2271,6 +2859,179 @@ def save_match():
         pass
 
     return redirect("/opening-players")
+
+@app.route("/save-match-2")
+def save_match_2():
+
+    import os
+    import json
+    from datetime import datetime
+
+    # 🔥 RESET HISTORY
+    open("data/history_2.txt", "w").close()
+
+    host = request.args.get("host")
+    visitor = request.args.get("visitor")
+    toss = request.args.get("toss")
+    opt = request.args.get("opt")
+    overs = request.args.get("overs")
+
+    # 🔥 SAFE TOSS WINNER
+    if toss == "host":
+        toss_winner = host
+    else:
+        toss_winner = visitor
+
+    # 🔥 SAFE BATTING / BOWLING
+    if opt == "bat":
+
+        batting = toss_winner
+
+        if toss_winner == host:
+            bowling = visitor
+        else:
+            bowling = host
+
+    else:
+
+        bowling = toss_winner
+
+        if toss_winner == host:
+            batting = visitor
+        else:
+            batting = host
+
+    # 🔥 MATCH FILE
+    # 🔥 MATCH FILES
+
+    match_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    base_name = (f"data/all_match/"f"{host}_vs_{visitor}_{match_id}").replace(" ", "_")
+
+    first_file = base_name + "_1st.txt"
+    second_file = base_name + "_2nd.txt"
+
+    open(first_file, "a").close()
+    open(second_file, "a").close()
+    # 🔢 GET PERMANENT MATCH NUMBER
+    match_numbers = ensure_match_numbers()
+    match_number = match_numbers[os.path.basename(first_file)]
+    # 🔥 MATCH TIME
+    bd_time = datetime.now(pytz.timezone("Asia/Dhaka"))
+
+    match_time = bd_time.strftime("%d %b %Y, %I:%M %p")
+
+    # 🔥 LOAD TEAM
+    def load_team(file):
+
+        players = []
+
+        try:
+
+            with open(file) as f:
+
+                for line in f:
+
+                    line = line.strip()
+
+                    if not line:
+                        continue
+
+                    parts = [x.strip() for x in line.split(",")]
+
+                    name = parts[0]
+
+                    role = parts[-1] if len(parts) > 1 else ""
+
+                    extra = parts[1:-1] if len(parts) > 2 else []
+
+                    players.append({
+                        "name": name,
+                        "role": role,
+                        "extra": extra
+                    })
+
+        except:
+            pass
+
+        return players
+
+    team1_list = load_team(f"data/teamlist/{host}.txt")
+    team2_list = load_team(f"data/teamlist/{visitor}.txt")
+
+    # 🔥 DYNAMIC SQUAD KEYS
+    t1_key = host.replace(" ", "_") + "_squad"
+    t2_key = visitor.replace(" ", "_") + "_squad"
+
+    # 🔥 MATCH DATA
+    match_data = {
+
+        "host": host,
+        "visitor": visitor,
+
+        "toss": toss_winner,
+        "opt": opt,
+
+        "batting": batting,
+        "bowling": bowling,
+
+        "overs": overs,
+
+        "score": "0",
+        "wickets": "0",
+
+        "over": "0",
+        "ball": "0",
+
+        "s_runs": "0",
+        "s_balls": "0",
+        "s_4": "0",
+        "s_6": "0",
+        "s_sr": "0",
+
+        "ns_runs": "0",
+        "ns_balls": "0",
+        "ns_4": "0",
+        "ns_6": "0",
+        "ns_sr": "0",
+
+        "b_runs": "0",
+        "b_balls": "0",
+        "b_maiden": "0",
+        "b_wickets": "0",
+        "b_er": "0",
+
+        "batsman_log": "",
+        "this_over": "",
+        "over_log": "",
+
+        "extra": "0,0LB,0B,0WD,0NB",
+
+        "partnerships": "[]",
+        "fall_of_wickets": "[]",
+
+        "innings": "1",
+
+        "first_match_file": first_file,
+        "second_match_file": second_file,
+        "match_time": match_time,
+        "match_number": match_number,
+        "wickets_log": "[]",
+
+        t1_key: json.dumps(team1_list),
+        t2_key: json.dumps(team2_list)
+    }
+
+    # 🔥 SAFE SAVE
+    safe_write("data/current_match_2.txt", match_data)
+
+    # 🔥 RESET HOME LOCK
+    try:
+        os.remove("data/home_current_2.txt")
+    except:
+        pass
+
+    return redirect("/opening-players-2")
 
 @app.route("/save-opening")
 def save_opening():
@@ -2292,6 +3053,28 @@ def save_opening():
     data["non_striker"] = non_striker
     data["bowler"] = bowler
 
+    #  "All out" needs to know how many players THIS batting team actually has for
+    #  THIS innings -- teams don't all field the same number, and it can even differ
+    #  match to match for the same team, so a single global number (advanced_settings)
+    #  is wrong more often than it's right. Work it out the same way the opening-players
+    #  page already does (same roster, same STF/BENCH/COACH exclusion) and store it on
+    #  the match itself.
+    try:
+        with open(f"data/teamlist/{data.get('batting')}.txt") as f:
+            eligible = []
+            for line in f:
+                parts = line.strip().split(",")
+                if not parts or not parts[0].strip():
+                    continue
+                roles = [p.strip().lower() for p in parts[1:]]
+                if "stf" in roles or "bench" in roles or "coach" in roles:
+                    continue
+                eligible.append(parts[0].strip())
+        if eligible:
+            data["players"] = str(len(eligible))
+    except Exception:
+        pass  # keep whatever data["players"] already was (e.g. the global default)
+
     # 🔥 NEW: INIT BATSMAN LOG (instant show)
     data["batsman_log"] = (
         f"{striker}=0,0,0,0,0.00|"
@@ -2307,9 +3090,66 @@ def save_opening():
     append_history(line)
     return redirect("/live-match")
 
+@app.route("/save-opening-2")
+def save_opening_2():
+
+    striker = request.args.get("striker")
+    non_striker = request.args.get("nonStriker")
+    bowler = request.args.get("bowler")
+
+    data = {}
+
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            key, value = line.strip().split("=",1)
+            data[key] = value
+
+    data["striker"] = striker
+    data["non_striker"] = non_striker
+    data["bowler"] = bowler
+
+    #  Same fix as save_opening() above, for match 2.
+    try:
+        with open(f"data/teamlist/{data.get('batting')}.txt") as f:
+            eligible = []
+            for line in f:
+                parts = line.strip().split(",")
+                if not parts or not parts[0].strip():
+                    continue
+                roles = [p.strip().lower() for p in parts[1:]]
+                if "stf" in roles or "bench" in roles or "coach" in roles:
+                    continue
+                eligible.append(parts[0].strip())
+        if eligible:
+            data["players"] = str(len(eligible))
+    except Exception:
+        pass
+
+    data["batsman_log"] = (
+        f"{striker}=0,0,0,0,0.00|"
+        f"{non_striker}=0,0,0,0,0.00"
+    )
+
+    data["bowler_log"] = (
+        f"{bowler}=0.0,0,0,0,0.00"
+    )
+
+    safe_write(
+        "data/current_match_2.txt",
+        data
+    )
+
+    line = ";;".join(
+        [f"{k}={v}" for k, v in data.items()]
+    )
+
+    append_history_2(line)
+
+    return redirect("/live-match-2")
 
 
 @app.route("/live-match")
+@locked(1)
 def live_match():
 
     if not session.get("admin"):
@@ -2360,7 +3200,10 @@ def live_match():
     new_player = request.args.get("new")
     over_ended = request.args.get("overEnded")
     wicket_type = request.args.get("type")
-    # 🔥 FINAL FIX: COUNT WICKET BEFORE NEW BOWLER
+    #  The bowler's wicket tally is now incremented once, in save_wicket() / save_wicket_2(),
+    #  at the moment the wicket is actually confirmed -- not here. Incrementing it here too
+    #  would double-count it for every normal wicket, and it never ran at all for the very
+    #  last wicket of an innings/match (which never reaches this /live-match?new=... route).
     if new_player and wicket_type:
         print(
         "\nWICKET EVENT"
@@ -2385,12 +3228,6 @@ def live_match():
         "New player:",
         new_player
         )
-        if (not wicket_type.startswith("Run out") and wicket_type != "retire" ):
-
-            bw = data.get("b_wickets")
-            prev_bw = int(bw) if str(bw).isdigit() else 0
-
-            data["b_wickets"] = str(prev_bw + 1)
     # 🔥 NEW ADD (BOWLER UPDATE)
     # 🔥 BOWLER UPDATE + SAVE
     new_bowler = request.args.get("bowler")
@@ -2724,21 +3561,461 @@ def live_match():
    
       
 
-    # 🔥 LOAD PLAYERS FROM ADVANCED SETTINGS
-    try:
-        with open("data/advanced_settings.txt") as f:
-            for line in f:
-                if line.startswith("players="):
-                    data["players"] = line.strip().split("=")[1]
-    except:
-        data["players"] = "11"
+    #  save_opening() / save_opening_2() already worked out the REAL number of players
+    #  for whichever team is batting this innings and stored it on the match -- don't
+    #  overwrite that with the one global advanced-settings number on every single page
+    #  load, or "all out" stops matching the actual squad again. Only fall back to the
+    #  global setting if this match somehow has no value yet (e.g. it was created before
+    #  this existed).
+    if not data.get("players"):
+        try:
+            with open("data/advanced_settings.txt") as f:
+                for line in f:
+                    if line.startswith("players="):
+                        data["players"] = line.strip().split("=")[1]
+        except:
+            data["players"] = "11"
 
     
     # 🔥 6. render
     return render_template("live_match.html", data=data)
 
+@app.route("/live-match-2")
+@locked(2)
+def live_match_2():
+
+    if not session.get("admin"):
+        return redirect("/login")
+
+    data = {}
+
+    # 🔥 1. file load
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+           if "=" in line:
+            k, v = line.strip().split("=", 1)
+            data[k] = v
+
+    # 🔥 INIT BOWLER DATA (FIX PC ISSUE)
+    if "b_balls" not in data:
+        data["b_balls"] = "0"
+
+    if "b_runs" not in data:
+        data["b_runs"] = "0"
+
+    if "b_wickets" not in data:
+        data["b_wickets"] = "0"
+
+    if "b_maiden" not in data:
+        data["b_maiden"] = "0"
+
+    if "b_er" not in data:
+        data["b_er"] = "0"
+    # 🔥 SAVE STATE WHEN PAGE LOAD (UNDO FIX)
+    if not request.args:   # only first load (no button click)
+
+        try:
+            with open("data/history_2.txt", "r") as f:
+                lines = f.readlines()
+        except:
+            lines = []
+
+        current_line = ";;".join([f"{k}={data[k]}" for k in data])
+
+        if not lines or lines[-1].strip() != current_line:
+            append_history_2(current_line)
+    # 🔥 2. URL data
+    score = request.args.get("score")
+    wickets = request.args.get("wickets")
+    over = request.args.get("over")
+    ball = request.args.get("ball")
+    new_player = request.args.get("new")
+    over_ended = request.args.get("overEnded")
+    wicket_type = request.args.get("type")
+    #  The bowler's wicket tally is now incremented once, in save_wicket() / save_wicket_2(),
+    #  at the moment the wicket is actually confirmed -- not here. Incrementing it here too
+    #  would double-count it for every normal wicket, and it never ran at all for the very
+    #  last wicket of an innings/match (which never reaches this /live-match?new=... route).
+    if new_player and wicket_type:
+        print(
+        "\nWICKET EVENT"
+        )
+
+        print(
+        "Striker:",
+        data.get("striker")
+        )
+
+        print(
+        "Non striker:",
+        data.get("non_striker")
+        )
+
+        print(
+        "Wicket type:",
+        wicket_type
+        )
+
+        print(
+        "New player:",
+        new_player
+        )
+    # 🔥 NEW ADD (BOWLER UPDATE)
+    # 🔥 BOWLER UPDATE + SAVE
+    new_bowler = request.args.get("bowler")
+    
+
+    if new_bowler:
+
+        old_bowler = data.get("bowler")
+
+        # 🔥 1. SAVE OLD BOWLER (REPLACE, NO ADD)
+        if old_bowler:
+
+            runs = int(data.get("b_runs", 0))
+            balls = int(data.get("b_balls", 0))
+            bw = data.get("b_wickets")
+            b_wickets_val = int(bw) if str(bw).isdigit() else 0
+            maiden = int(data.get("b_maiden", 0))
+
+            # balls → overs
+            overs = balls // 6
+            rem = balls % 6
+            over_text = f"{overs}.{rem}"
+
+            er = round((runs / (balls/6)) if balls else 0, 2)
+
+            log = data.get("bowler_log", "")
+            new_log_list = []
+            found_old = False
+
+            if log:
+                entries = log.split("|")
+
+                for entry in entries:
+                    name, stats = entry.split("=")
+
+                    if name == old_bowler:
+                        # 🔥 REPLACE (NOT ADD)
+                        new_log_list.append(
+                           f"{name}={over_text},{runs},{maiden},{b_wickets_val},{er}"
+                        )
+                        found_old = True
+                    else:
+                        new_log_list.append(entry)
+
+                if not found_old:
+                    new_log_list.append(
+                        f"{old_bowler}={over_text},{runs},{maiden},{b_wickets_val},{er}"
+                    )
+
+                data["bowler_log"] = "|".join(new_log_list)
+
+            else:
+                data["bowler_log"] = f"{old_bowler}={over_text},{runs},{maiden},{b_wickets_val},{er}"
+
+        # 🔥 2. SET NEW BOWLER
+        data["bowler"] = new_bowler
+        # 🔥 NEW BOWLER INSTANT SHOW (LIKE BATSMAN)
+
+        def add_bowler_if_not_exists(log, name):
+            if not name:
+                return log
+
+            entries = log.split("|") if log else []
+
+            for e in entries:
+                if e.split("=")[0] == name:
+                    return log  # already আছে
+
+            # default stats (same format as তোমার system)
+            new_entry = f"{name}=0.0,0,0,0,0.00"
+
+            if log:
+                return log + "|" + new_entry
+            else:
+                return new_entry
+
+
+        data["bowler_log"] = add_bowler_if_not_exists(
+            data.get("bowler_log", ""),
+            data.get("bowler")
+        )
+
+        # 🔥 3. LOAD FOR FRONTEND (ONLY SHOW)
+        log = data.get("bowler_log", "")
+        found = False
+
+        if log:
+            entries = log.split("|")
+
+            for entry in entries:
+                name, stats = entry.split("=")
+
+                if name == new_bowler:
+                    found = True
+
+                    o, r, m, w, e = stats.split(",")
+
+                    # overs → balls
+                    ov, ob = map(int, o.split("."))
+                    total_balls = ov * 6 + ob
+
+                    data["b_runs"] = r
+                    data["b_balls"] = str(total_balls)
+                    data["b_maiden"] = m
+                    data["b_wickets"] = w  
+                    data["b_er"] = e
+                    break
+
+        # 🔥 4. IF NEW → RESET
+        if not found:
+            data["b_runs"] = "0"
+            data["b_balls"] = "0"
+            data["b_maiden"] = "0"
+            data["b_wickets"] = "0" 
+            data["b_er"] = "0"    
+
+    # 🔥 3. score update
+    if score:
+        data["score"] = score
+
+    # 🔥 ONLY update if URL has wickets (important)
+    if request.args.get("wickets") is not None:
+        data["wickets"] = request.args.get("wickets")
+    if over:
+        data["over"] = over
+    if ball:
+        data["ball"] = ball
+
+    # 🔥 BOWLER WICKET CONTROL (FINAL FIX)
+
+   # 🔥 FINAL: ONLY COUNT WICKET AFTER FOW DONE
+    
+    # 🔥 4. NEW BATSMAN + WICKET LOGIC
+    if new_player:
+
+        # 🔥 =========================
+        # 🔵 NEW BATSMAN POSITION LOGIC
+        # 🔥 =========================
+
+        striker_new = data.get("striker", "")
+        non_striker_new = data.get("non_striker", "")
+
+        if wicket_type in ["Bowled", "Catch out", "LBW", "Stumping", "Hit wicket"]:
+            striker_new = new_player
+
+        elif wicket_type == "Run out striker":
+            striker_new = new_player
+
+        elif wicket_type == "Run out striker non-striker side":
+
+            # 🔥 temp old non-striker stats
+            temp_runs = data["ns_runs"]
+            temp_balls = data["ns_balls"]
+            temp_4 = data["ns_4"]
+            temp_6 = data["ns_6"]
+            temp_sr = data["ns_sr"]
+
+            # 🔥 old non-striker → striker
+            striker_new = data["non_striker"]
+
+            data["s_runs"] = temp_runs
+            data["s_balls"] = temp_balls
+            data["s_4"] = temp_4
+            data["s_6"] = temp_6
+            data["s_sr"] = temp_sr
+
+            # 🔥 new batsman → non-striker
+            non_striker_new = new_player
+
+            data["ns_runs"] = "0"
+            data["ns_balls"] = "0"
+            data["ns_4"] = "0"
+            data["ns_6"] = "0"
+            data["ns_sr"] = "0"
+
+        elif wicket_type == "Run out non-striker":
+            non_striker_new = new_player
+
+        elif wicket_type == "Run out non-striker striker side":
+
+            # 🔥 temp old striker stats
+            temp_runs = data["s_runs"]
+            temp_balls = data["s_balls"]
+            temp_4 = data["s_4"]
+            temp_6 = data["s_6"]
+            temp_sr = data["s_sr"]
+
+            # 🔥 old striker → non-striker
+            non_striker_new = data["striker"]
+
+            data["ns_runs"] = temp_runs
+            data["ns_balls"] = temp_balls
+            data["ns_4"] = temp_4
+            data["ns_6"] = temp_6
+            data["ns_sr"] = temp_sr
+
+            # 🔥 new batsman → striker
+            striker_new = new_player
+
+            data["s_runs"] = "0"
+            data["s_balls"] = "0"
+            data["s_4"] = "0"
+            data["s_6"] = "0"
+            data["s_sr"] = "0"
+
+        else:
+            striker_new = new_player
+
+        # 🔥 assign
+        data["striker"] = striker_new
+        data["non_striker"] = non_striker_new
+        # 🔥 NEW BATSMAN INSTANT SHOW (NO BALL NEEDED)
+
+        def add_if_not_exists(log, name):
+            if not name:
+                return log
+
+            entries = log.split("|") if log else []
+
+            for e in entries:
+                if e.split("=")[0] == name:
+                    return log  # already আছে
+
+            new_entry = f"{name}=0,0,0,0,0.00"
+
+            if log:
+                return log + "|" + new_entry
+            else:
+                return new_entry
+
+
+        data["batsman_log"] = add_if_not_exists(
+            data.get("batsman_log", ""),
+            data.get("striker")
+        )
+
+        data["batsman_log"] = add_if_not_exists(
+            data.get("batsman_log", ""),
+            data.get("non_striker")
+        )
+        
+
+        
+        # 🔥 reset ONLY new batsman
+        if data["striker"] == new_player:
+            data["s_runs"] = "0"
+            data["s_balls"] = "0"
+            data["s_4"] = "0"
+            data["s_6"] = "0"
+            data["s_sr"] = "0"
+        else:
+            data["ns_runs"] = "0"
+            data["ns_balls"] = "0"
+            data["ns_4"] = "0"
+            data["ns_6"] = "0"
+            data["ns_sr"] = "0"
+
+        # 🔥 =========================
+        # 🟡 LAST BALL SWAP (PERFECT)
+        # 🔥 =========================
+        if over_ended == "true":
+
+            # name swap
+            temp = data["striker"]
+            data["striker"] = data["non_striker"]
+            data["non_striker"] = temp
+
+            # stats swap
+            temp_runs = data.get("s_runs", "0")
+            temp_balls = data.get("s_balls", "0")
+            temp_4 = data.get("s_4", "0")
+            temp_6 = data.get("s_6", "0")
+            temp_sr = data.get("s_sr", "0")
+
+            data["s_runs"] = data.get("ns_runs", "0")
+            data["s_balls"] = data.get("ns_balls", "0")
+            data["s_4"] = data.get("ns_4", "0")
+            data["s_6"] = data.get("ns_6", "0")
+            data["s_sr"] = data.get("ns_sr", "0")
+
+            data["ns_runs"] = temp_runs
+            data["ns_balls"] = temp_balls
+            data["ns_4"] = temp_4
+            data["ns_6"] = temp_6
+            data["ns_sr"] = temp_sr
+        
+        # 🔥 =========================
+        # 🔥 INSTANT MATCH FILE UPDATE (NEW BATSMAN FIX)
+        # 🔥 =========================
+
+        
+
+    # 🔥 PRESERVE ONLY WICKETS LOG
+
+    try:
+
+        old = {}
+
+        with open("data/current_match_2.txt") as f:
+
+            for line in f:
+
+                if "=" in line:
+
+                    k, v = line.strip().split("=", 1)
+
+                    old[k] = v
+
+        # 🔥 ONLY preserve when no new batsman
+        if not new_player:
+
+            if "wickets_log" in old:
+
+                data["wickets_log"] = old["wickets_log"]
+
+    except:
+        pass
+    print(
+    "\nBEFORE WRITE",
+    data.get("wickets_log")
+    )
+    # 🔥 SAVE MATCH FILE AFTER FULL BATSMAN LOG READY
+    
+    # 🔥 5. save
+    safe_write("data/current_match_2.txt", data)
+    
+    print(
+    "\nAFTER WRITE",
+    data.get("wickets_log")
+    )
+   
+      
+
+    #  save_opening() / save_opening_2() already worked out the REAL number of players
+    #  for whichever team is batting this innings and stored it on the match -- don't
+    #  overwrite that with the one global advanced-settings number on every single page
+    #  load, or "all out" stops matching the actual squad again. Only fall back to the
+    #  global setting if this match somehow has no value yet (e.g. it was created before
+    #  this existed).
+    if not data.get("players"):
+        try:
+            with open("data/advanced_settings.txt") as f:
+                for line in f:
+                    if line.startswith("players="):
+                        data["players"] = line.strip().split("=")[1]
+        except:
+            data["players"] = "11"
+
+    
+    # 🔥 6. render
+    return render_template("live_match_2.html", data=data)
+
+
 
 @app.route("/update-score", methods=["POST"])
+@locked(1)
 def update_score():
 
     import os
@@ -2781,7 +4058,14 @@ def update_score():
     match["b_balls"] = str(data.get("b_balls", 0))
     match["b_maiden"] = str(data.get("b_maiden", 0))
     match["b_er"] = str(data.get("b_er", 0))
-    match["b_wickets"] = str(data.get("b_wickets", match.get("b_wickets", 0)))
+    # b_wickets is authoritative on the SERVER now (incremented once in save_wicket()
+    # when a dismissal is confirmed, reset to 0 when a new bowler is chosen). The browser
+    # only reloads this number when the page loads and never increments it itself, so
+    # trusting the value it sends here was overwriting every wicket straight back to the
+    # pre-wicket count on the very next ball -- which is why the bowler's wicket column
+    # kept losing non-run-out dismissals. Just keep whatever the server already has.
+    if "b_wickets" not in match:
+        match["b_wickets"] = "0"
 
     # 🔥 THIS OVER
     if data.get("this_over") is not None:
@@ -3094,6 +4378,369 @@ def update_score():
 
     return jsonify({"status": "ok"})
 
+@app.route("/update-score-2", methods=["POST"])
+@locked(2)
+def update_score_2():
+
+    import os
+
+    data = request.json
+
+    match = {}
+
+    # 🔥 LOAD CURRENT MATCH
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            if "=" in line:
+                k, v = line.strip().split("=", 1)
+                match[k] = v
+
+    # 🔥 SCORE
+    match["score"] = str(data["score"])
+    match["wickets"] = str(data["wickets"])
+    match["over"] = str(data["over"])
+    match["ball"] = str(data["ball"])
+
+    match["striker"] = data.get("striker", match.get("striker"))
+    match["non_striker"] = data.get("non_striker", match.get("non_striker"))
+
+    # 🔥 BATSMAN
+    match["s_runs"] = str(data.get("s_runs", 0))
+    match["s_balls"] = str(data.get("s_balls", 0))
+    match["s_4"] = str(data.get("s_4", 0))
+    match["s_6"] = str(data.get("s_6", 0))
+    match["s_sr"] = str(data.get("s_sr", 0))
+
+    match["ns_runs"] = str(data.get("ns_runs", 0))
+    match["ns_balls"] = str(data.get("ns_balls", 0))
+    match["ns_4"] = str(data.get("ns_4", 0))
+    match["ns_6"] = str(data.get("ns_6", 0))
+    match["ns_sr"] = str(data.get("ns_sr", 0))
+
+    # 🔥 BOWLER
+    match["b_runs"] = str(data.get("b_runs", 0))
+    match["b_balls"] = str(data.get("b_balls", 0))
+    match["b_maiden"] = str(data.get("b_maiden", 0))
+    match["b_er"] = str(data.get("b_er", 0))
+    # b_wickets is authoritative on the SERVER now (incremented once in save_wicket()
+    # when a dismissal is confirmed, reset to 0 when a new bowler is chosen). The browser
+    # only reloads this number when the page loads and never increments it itself, so
+    # trusting the value it sends here was overwriting every wicket straight back to the
+    # pre-wicket count on the very next ball -- which is why the bowler's wicket column
+    # kept losing non-run-out dismissals. Just keep whatever the server already has.
+    if "b_wickets" not in match:
+        match["b_wickets"] = "0"
+
+    # 🔥 THIS OVER
+    if data.get("this_over") is not None:
+        match["this_over"] = data.get("this_over")
+
+    # 🔥 FINISHED OVER
+    if data.get("finished_over"):
+
+        old = match.get("over_log", "")
+
+        if old:
+            match["over_log"] = old + "|" + data.get("finished_over")
+        else:
+            match["over_log"] = data.get("finished_over")
+
+        match["this_over"] = ""
+
+    # 🔥 EXTRA
+    extra = data.get("extra", "")
+    if extra:
+        match["extra"] = extra
+
+    # 🔥 PARTNERSHIP
+    p = data.get("partnerships")
+    if p and p.strip() not in ["", "[]", "null"]:
+        match["partnerships"] = p
+    # 🔥 FALL OF WICKETS
+    fow = data.get("fall_of_wickets")
+    if fow and fow.strip() not in ["", "[]", "null"]:
+        match["fall_of_wickets"] = fow
+
+    # 🔥 FORCE SAVE LAST BOWLER
+    total_overs = int(match.get("overs", 0))
+    current_over = int(match.get("over", 0))
+    current_ball = int(match.get("ball", 0))
+
+    if current_over == total_overs and current_ball == 0:
+
+        bowler = match.get("bowler")
+
+        if bowler:
+
+            runs = int(match.get("b_runs", 0))
+            balls = int(match.get("b_balls", 0))
+            wickets = int(match.get("b_wickets", 0))
+            maiden = int(match.get("b_maiden", 0))
+
+            overs_done = balls // 6
+            rem = balls % 6
+            over_text = f"{overs_done}.{rem}"
+
+            er = round((runs / (balls / 6)) if balls else 0, 2)
+
+            log = match.get("bowler_log", "")
+            new_log = []
+            found = False
+
+            if log:
+
+                for entry in log.split("|"):
+
+                    name, stats = entry.split("=")
+
+                    if name == bowler:
+                        new_log.append(f"{name}={over_text},{runs},{maiden},{wickets},{er}")
+                        found = True
+                    else:
+                        new_log.append(entry)
+
+                if not found:
+                    new_log.append(f"{bowler}={over_text},{runs},{maiden},{wickets},{er}")
+
+                match["bowler_log"] = "|".join(new_log)
+
+            else:
+                match["bowler_log"] = f"{bowler}={over_text},{runs},{maiden},{wickets},{er}"
+
+    # 🔥 BATSMAN LOG
+    def update_batsman_log(match, name, runs, balls, fours, sixes, sr):
+
+        if not name:
+            return match
+
+        name = name.strip()
+
+        new_entry = f"{name}={runs},{balls},{fours},{sixes},{sr}"
+
+        log = match.get("batsman_log", "")
+        new_log = []
+        found = False
+
+        if log:
+
+            for entry in log.split("|"):
+
+                n = entry.split("=")[0].strip()
+
+                if n == name:
+                    new_log.append(new_entry)
+                    found = True
+                else:
+                    new_log.append(entry)
+
+            if not found:
+                new_log.append(new_entry)
+
+            match["batsman_log"] = "|".join(new_log)
+
+        else:
+            match["batsman_log"] = new_entry
+
+        return match
+
+    # 🔴 STRIKER
+    match = update_batsman_log(
+        match,
+        match.get("striker"),
+        match.get("s_runs"),
+        match.get("s_balls"),
+        match.get("s_4"),
+        match.get("s_6"),
+        match.get("s_sr")
+    )
+
+    # 🔵 NON STRIKER
+    match = update_batsman_log(
+        match,
+        match.get("non_striker"),
+        match.get("ns_runs"),
+        match.get("ns_balls"),
+        match.get("ns_4"),
+        match.get("ns_6"),
+        match.get("ns_sr")
+    )
+
+    # 🔵 BOWLER LOG
+    def update_bowler_log(match, name, runs, balls, maiden, wickets, er):
+
+        if not name:
+            return match
+
+        overs_done = int(balls) // 6
+        rem = int(balls) % 6
+        over_text = f"{overs_done}.{rem}"
+
+        new_entry = f"{name}={over_text},{runs},{maiden},{wickets},{er}"
+
+        log = match.get("bowler_log", "")
+        new_log = []
+        found = False
+
+        if log:
+
+            for entry in log.split("|"):
+
+                n = entry.split("=")[0]
+
+                if n == name:
+                    new_log.append(new_entry)
+                    found = True
+                else:
+                    new_log.append(entry)
+
+            if not found:
+                new_log.append(new_entry)
+
+            match["bowler_log"] = "|".join(new_log)
+
+        else:
+            match["bowler_log"] = new_entry
+
+        return match
+
+    match = update_bowler_log(
+        match,
+        match.get("bowler"),
+        match.get("b_runs"),
+        match.get("b_balls"),
+        match.get("b_maiden"),
+        match.get("b_wickets"),
+        match.get("b_er")
+    )
+
+    # 🔥 NEED CALCULATION
+    if str(match.get("innings")) == "2":
+
+        target = int(match.get("target", 0) or 0)
+        score = int(match.get("score", 0) or 0)
+
+        total_overs = int(match.get("overs", 0) or 0)
+        over = int(match.get("over", 0) or 0)
+        ball = int(match.get("ball", 0) or 0)
+
+        total_balls = total_overs * 6
+        played_balls = over * 6 + ball
+
+        balls_left = total_balls - played_balls
+        runs_needed = target - score
+
+        if runs_needed < 0:
+            runs_needed = 0
+
+        if balls_left < 0:
+            balls_left = 0
+
+        match["need_runs"] = str(runs_needed)
+        match["need_balls"] = str(balls_left)
+
+        batting_team = match.get("batting", "")
+
+        match["need_text"] = f"{batting_team} need {runs_needed} runs in {balls_left} balls"
+
+    # 🔥 MATCH FILE SAVE
+    # 🔥 MATCH FILE SAVE
+    if match.get("innings") == "1":
+        match_file = match.get("first_match_file")
+    else:
+        match_file = match.get("second_match_file")
+
+    if match_file:
+
+        # 🔥 KEEP BIGGER WICKET LOG
+        try:
+
+            old = {}
+
+            with open(match_file) as f:
+
+                for line in f:
+
+                    if "=" in line:
+
+                        k, v = line.strip().split("=",1)
+
+                        old[k] = v
+
+
+            import json
+
+            old_len = len(
+                json.loads(
+                    old.get(
+                        "wickets_log",
+                        "[]"
+                    )
+                )
+            )
+
+            cur_len = len(
+                json.loads(
+                    match.get(
+                        "wickets_log",
+                        "[]"
+                    )
+                )
+            )
+
+
+            if old_len > cur_len:
+
+                match[
+                    "wickets_log"
+                ] = old[
+                    "wickets_log"
+                ]
+
+        except:
+            pass
+
+
+        # 🔥 SAFE FIRST INNINGS
+        if str(match.get("innings","1")).strip()=="1":
+
+            safe_write(
+                match_file,
+                match
+            )
+
+
+        temp_match = match_file + ".tmp"
+
+        with open(temp_match,"w") as f:
+
+            for k,v in match.items():
+
+                f.write(
+                    f"{k}={v}\n"
+                )
+
+        os.replace(
+            temp_match,
+            match_file
+        )
+
+    # 🔥 SAFE HISTORY
+    safe_match = {}
+
+    for k, v in match.items():
+
+        if isinstance(v, str):
+            v = v.replace("\n", "").replace(";;", "")
+
+        safe_match[k] = v
+
+    line = ";;".join([f"{k}={safe_match[k]}" for k in safe_match])
+    append_history_2(line)
+
+    # 🔥 SAVE CURRENT MATCH
+    safe_write("data/current_match_2.txt", match)
+
+    return jsonify({"status": "ok"})
 
 
     
@@ -3152,6 +4799,25 @@ def fall_wicket():
         players = [line.strip().split(",")[0] for line in f]
 
     return render_template("fall_of_wicket.html", players=players)
+@app.route("/fall-of-wicket-2")
+def fall_wicket_2():
+
+    data = {}
+
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            k, v = line.strip().split("=", 1)
+            data[k] = v
+
+    batting = data["batting"]
+
+    with open(f"data/teamlist/{batting}.txt") as f:
+        players = [line.strip().split(",")[0] for line in f]
+
+    return render_template(
+        "fall_of_wicket_2.html",
+        players=players
+    )
 
 @app.route("/choose-bowler")
 def choose_bowler():
@@ -3174,7 +4840,29 @@ def choose_bowler():
 
     return render_template("choose_bowler.html", bowlers=bowlers)
 
+@app.route("/choose-bowler-2")
+def choose_bowler_2():
+
+    # 🔥 current match data load
+    data = {}
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            k, v = line.strip().split("=",1)
+            data[k] = v
+
+    bowling_team = data.get("bowling")
+
+    if not bowling_team:
+        return "Bowling team missing"
+
+    # 🔥 SAME AS opening page
+    with open(f"data/teamlist/{bowling_team}.txt") as f:
+        bowlers = [line.strip().split(",")[0] for line in f]
+
+    return render_template("choose_bowler_2.html", bowlers=bowlers)
+
 @app.route("/undo")
+@locked(1)
 def undo():
 
     import os
@@ -3238,8 +4926,73 @@ def undo():
 
     return redirect("/live-match")
 
+@app.route("/undo-2")
+@locked(2)
+def undo_2():
+
+    import os
+
+    try:
+
+        # 🔥 READ HISTORY
+        with open("data/history_2.txt", "r") as f:
+            lines = f.readlines()
+
+        if len(lines) < 2:
+            return redirect("/live-match-2")
+
+        # 🔥 REMOVE LAST STATE
+        lines = lines[:-1]
+
+        # 🔥 SAFE SAVE HISTORY
+        temp_history = "data/history_temp_2.txt"
+
+        with open(temp_history, "w") as f:
+            f.writelines(lines)
+
+        os.replace(temp_history, "data/history_2.txt")
+
+        # 🔥 GET PREVIOUS STATE
+        last = lines[-1].strip()
+
+        new_data = {}
+
+        # 🔥 SAFE SPLIT
+        items = last.split(";;")
+
+        for item in items:
+
+            if "=" in item:
+                k, v = item.split("=", 1)
+                new_data[k] = v
+
+        # 🔥 SAVE CURRENT MATCH
+        safe_write("data/current_match_2.txt", new_data)
+
+        # =====================================
+        # 🔥 UPDATE MATCH FILE (DUAL FILE FIX)
+        # =====================================
+
+        if new_data.get("innings") == "1":
+
+            match_file = new_data.get("first_match_file")
+
+        else:
+
+            match_file = new_data.get("second_match_file")
+
+        if match_file:
+
+            safe_write(match_file, new_data)
+
+    except Exception as e:
+
+        print("UNDO ERROR:", e)
+
+    return redirect("/live-match-2")
 
 @app.route("/start-second")
+@locked(1)
 def start_second():
 
     data = {}
@@ -3312,8 +5065,82 @@ def start_second():
 
     return redirect("/opening-players")
 
+@app.route("/start-second-2")
+@locked(2)
+def start_second_2():
+
+    data = {}
+
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            if "=" in line:
+                k, v = line.strip().split("=", 1)
+                data[k] = v
+
+    match_file = data.get("first_match_file")
+
+    # 🔥 SAVE 1ST INNINGS
+    if match_file:
+        safe_write(match_file, data)
+
+    # 🔥 TARGET
+    data["target"] = str(int(data.get("score", 0)) + 1)
+
+    # 🔥 TEAM SWAP
+    data["batting"], data["bowling"] = data["bowling"], data["batting"]
+
+    # 🔥 RESET SCORE
+    data["score"] = "0"
+    data["wickets"] = "0"
+    data["over"] = "0"
+    data["ball"] = "0"
+
+    data["this_over"] = ""
+    data["over_log"] = ""
+    data["batsman_log"] = ""
+    data["partnerships"] = "[]"
+    data["fall_of_wickets"] = "[]"
+    data["extra"] = "0,0LB,0B,0WD,0NB"
+
+    # 🔥 BATSMAN RESET
+    data["s_runs"] = "0"
+    data["s_balls"] = "0"
+    data["s_4"] = "0"
+    data["s_6"] = "0"
+    data["s_sr"] = "0"
+
+    data["ns_runs"] = "0"
+    data["ns_balls"] = "0"
+    data["ns_4"] = "0"
+    data["ns_6"] = "0"
+    data["ns_sr"] = "0"
+
+    # 🔥 BOWLER RESET
+    data["b_runs"] = "0"
+    data["b_balls"] = "0"
+    data["b_wickets"] = "0"
+    data["b_maiden"] = "0"
+    data["b_er"] = "0"
+
+    # 🔥 RESET LOGS
+    data["bowler_log"] = ""
+    data["wickets_log"] = "[]"
+    data["Man_of_the_Match"] = ""
+  
+
+    # 🔥 SECOND INNINGS
+    data["innings"] = "2"
+
+    # 🔥 SAVE SECOND INNINGS FILE
+    safe_write(data["second_match_file"], data)
+
+    # 🔥 SAVE CURRENT MATCH
+    safe_write("data/current_match_2.txt", data)
+
+    return redirect("/opening-players-2")
 
 @app.route("/save-result", methods=["POST"])
+@locked(1)
 def save_result():
 
     data_json = request.json
@@ -3347,14 +5174,47 @@ def save_result():
         safe_write(match_file, match)
 
     return "OK"
+@app.route("/save-result-2", methods=["POST"])
+@locked(2)
+def save_result_2():
+
+    data_json = request.json
+
+    result = data_json.get("result", "")
+
+    print("RESULT RECEIVED:", result)
+
+    match = {}
+
+    with open("data/current_match_2.txt") as f:
+
+        for line in f:
+
+            if "=" in line:
+                k, v = line.strip().split("=", 1)
+                match[k] = v
+
+    match["match_result"] = result
+
+    safe_write("data/current_match_2.txt", match)
+
+    match_file = match.get("second_match_file")
+
+    if match_file:
+
+        safe_write(match_file, match)
+
+    return "OK"
+
+
 @app.route("/history")
 def history():
 
     import os
-
+    ensure_match_numbers()
     folder = "data/all_match"
     matches = []
-
+    
     # 🔥 ONLY FIRST INNINGS FILE
     files = [f for f in os.listdir(folder) if f.endswith("_1st.txt")]
 
@@ -3421,7 +5281,7 @@ def history():
 
         # 🔥 STATUS
         status = "COMPLETED" if result_text else "LIVE"
-
+        match_number = first.get("match_number", "")
         match_info = {
 
             "team1": team1,
@@ -3445,7 +5305,7 @@ def history():
             "innings_break": innings_break,
 
             "date": match_time,
-
+            "match_number": first.get("match_number", "0"),
             # 🔥 IMPORTANT
             "file": file
         }
@@ -3475,7 +5335,7 @@ def history():
 def history_data():
 
     import os
-
+    ensure_match_numbers()
     folder = "data/all_match"
     matches = []
 
@@ -3571,7 +5431,7 @@ def history_data():
             "innings_break": innings_break,
 
             "date": match_time,
-
+            "match_number": first.get("match_number", "0"),
             # 🔥 IMPORTANT
             "file": file
         }
@@ -3672,6 +5532,7 @@ def resume_match(file):
     return redirect("/live-match")
 
 @app.route("/save-wicket", methods=["POST"])
+@locked(1)
 def save_wicket():
 
     import json
@@ -3687,7 +5548,7 @@ def save_wicket():
                 match[k] = v
 
     wicket_type = data.get("wicket_type")
-    out_player = data.get("out_player")
+    out_player = (data.get("out_player") or "").strip() or match.get("striker")  # never drop a wicket
     bowler = match.get("bowler")
 
     if wicket_type and out_player:
@@ -3712,8 +5573,172 @@ def save_wicket():
 
         match["wickets_log"] = json.dumps(log)
 
+        #  Bowler's wicket tally, counted exactly once, right here, for every confirmed
+        #  wicket (run outs and retirements don't count against the bowler). This used to
+        #  only happen when the browser navigated on to /live-match with a new batsman,
+        #  which never happened for the last wicket of an innings/match -- so that wicket
+        #  never reached the bowler's figures.
+        if not wicket_type.startswith("Run out") and wicket_type != "retire":
+            bw = match.get("b_wickets")
+            prev_bw = int(bw) if str(bw).isdigit() else 0
+            match["b_wickets"] = str(prev_bw + 1)
+
+            #  The number above is the live counter checked while the innings continues.
+            #  Also refresh the persistent bowler scorecard (bowler_log) right now, so a
+            #  wicket that also ends the bowler's over/spell isn't lost before anything
+            #  else gets a chance to save it.
+            try:
+                b_balls = int(match.get("b_balls", 0))
+                b_runs = int(match.get("b_runs", 0))
+                b_maiden = int(match.get("b_maiden", 0))
+                b_wk = int(match.get("b_wickets", 0))
+                overs_done, rem = divmod(b_balls, 6)
+                over_text = f"{overs_done}.{rem}"
+                er = round((b_runs / (b_balls / 6)) if b_balls else 0, 2)
+                entry = f"{bowler}={over_text},{b_runs},{b_maiden},{b_wk},{er}"
+                blog = match.get("bowler_log", "")
+                new_blog, found = [], False
+                if blog:
+                    for e in blog.split("|"):
+                        n = e.split("=")[0]
+                        if n == bowler:
+                            new_blog.append(entry)
+                            found = True
+                        else:
+                            new_blog.append(e)
+                    if not found:
+                        new_blog.append(entry)
+                    match["bowler_log"] = "|".join(new_blog)
+                else:
+                    match["bowler_log"] = entry
+            except Exception:
+                pass
+
+        #  FIX: the Fall of Wickets entry for this dismissal was written by the browser
+        #  the moment the wicket happened, and at that moment it always guessed "striker"
+        #  as the out batter (addRun / the scoring engine cannot know yet whether it will
+        #  turn out to be the striker or the non-striker on a run out). Now that the
+        #  scorer has picked the real out batter on this page, correct that guess.
+        try:
+            fow = json.loads(match.get("fall_of_wickets", "[]"))
+        except Exception:
+            fow = []
+        if fow:
+            fow[-1]["player"] = out_player
+            match["fall_of_wickets"] = json.dumps(fow)
+
     # 🔥 SAVE BACK
     safe_write("data/current_match.txt", match)
+    # 🔥 INSTANT MATCH FILE SAVE
+    if match.get("innings") == "1":
+        match_file = match.get("first_match_file")
+    else:
+        match_file = match.get("second_match_file")
+
+    if match_file:
+        safe_write(match_file, match)
+
+    return {"status": "ok"}
+
+
+@app.route("/save-wicket-2", methods=["POST"])
+@locked(2)
+def save_wicket_2():
+
+    import json
+
+    data = request.json
+
+    # 🔥 LOAD MATCH
+    match = {}
+    with open("data/current_match_2.txt") as f:
+        for line in f:
+            if "=" in line:
+                k, v = line.strip().split("=", 1)
+                match[k] = v
+
+    wicket_type = data.get("wicket_type")
+    out_player = (data.get("out_player") or "").strip() or match.get("striker")  # never drop a wicket
+    bowler = match.get("bowler")
+
+    if wicket_type and out_player:
+
+        try:
+            log = json.loads(match.get("wickets_log", "[]"))
+        except:
+            log = []
+
+        log.append({
+            "batsman": out_player,
+            "type": wicket_type,
+            "bowler": bowler
+        })
+        print(
+        "\nNEW LOG",
+        log
+        )
+        # 🔥 ADD THIS
+        match["last_wicket_player"] = out_player
+        match["last_wicket_type"] = wicket_type
+
+        match["wickets_log"] = json.dumps(log)
+
+        #  Bowler's wicket tally, counted exactly once, right here, for every confirmed
+        #  wicket (run outs and retirements don't count against the bowler). This used to
+        #  only happen when the browser navigated on to /live-match with a new batsman,
+        #  which never happened for the last wicket of an innings/match -- so that wicket
+        #  never reached the bowler's figures.
+        if not wicket_type.startswith("Run out") and wicket_type != "retire":
+            bw = match.get("b_wickets")
+            prev_bw = int(bw) if str(bw).isdigit() else 0
+            match["b_wickets"] = str(prev_bw + 1)
+
+            #  The number above is the live counter checked while the innings continues.
+            #  Also refresh the persistent bowler scorecard (bowler_log) right now, so a
+            #  wicket that also ends the bowler's over/spell isn't lost before anything
+            #  else gets a chance to save it.
+            try:
+                b_balls = int(match.get("b_balls", 0))
+                b_runs = int(match.get("b_runs", 0))
+                b_maiden = int(match.get("b_maiden", 0))
+                b_wk = int(match.get("b_wickets", 0))
+                overs_done, rem = divmod(b_balls, 6)
+                over_text = f"{overs_done}.{rem}"
+                er = round((b_runs / (b_balls / 6)) if b_balls else 0, 2)
+                entry = f"{bowler}={over_text},{b_runs},{b_maiden},{b_wk},{er}"
+                blog = match.get("bowler_log", "")
+                new_blog, found = [], False
+                if blog:
+                    for e in blog.split("|"):
+                        n = e.split("=")[0]
+                        if n == bowler:
+                            new_blog.append(entry)
+                            found = True
+                        else:
+                            new_blog.append(e)
+                    if not found:
+                        new_blog.append(entry)
+                    match["bowler_log"] = "|".join(new_blog)
+                else:
+                    match["bowler_log"] = entry
+            except Exception:
+                pass
+
+        #  FIX: the Fall of Wickets entry for this dismissal was written by the browser
+        #  the moment the wicket happened, and at that moment it always guessed "striker"
+        #  as the out batter (addRun / the scoring engine cannot know yet whether it will
+        #  turn out to be the striker or the non-striker on a run out). Now that the
+        #  scorer has picked the real out batter on this page, correct that guess.
+        try:
+            fow = json.loads(match.get("fall_of_wickets", "[]"))
+        except Exception:
+            fow = []
+        if fow:
+            fow[-1]["player"] = out_player
+            match["fall_of_wickets"] = json.dumps(fow)
+
+    # 🔥 SAVE BACK
+    safe_write("data/current_match_2.txt", match)
     # 🔥 INSTANT MATCH FILE SAVE
     if match.get("innings") == "1":
         match_file = match.get("first_match_file")
@@ -4026,7 +6051,7 @@ def latest_history():
             "team1": team1,
 
             "team2": team2,
-
+            "match_number": first.get("match_number", "0"),
             "team1_score": first.get("score", "0"),
 
             "team1_wickets": first.get("wickets", "0"),
@@ -5079,21 +7104,29 @@ def points():
                         "nrr": f"{nrr_value:+.2f}"
                     }
 
-                    if lost >= 1:
+                    # if lost >= 1:
 
-                        if group == "a":
-                            eliminated_a.append(data)
+                    #     if group == "a":
+                    #         eliminated_a.append(data)
 
-                        elif group == "b":
-                            eliminated_b.append(data)
+                    #     elif group == "b":
+                    #         eliminated_b.append(data)
 
-                    else:
+                    # else:
 
-                        if group == "a":
-                            group_a.append(data)
+                    #     if group == "a":
+                    #         group_a.append(data)
 
-                        elif group == "b":
-                            group_b.append(data)
+                    #     elif group == "b":
+                    #         group_b.append(data)
+
+
+                    # আপাতত কোনো team eliminated হবে না
+                    if group == "a":
+                        group_a.append(data)
+
+                    elif group == "b":
+                        group_b.append(data)
 
     except Exception as e:
         print("Error:", e)
@@ -5387,6 +7420,61 @@ def current_squads():
 
     return render_template(
         "current_squads.html",
+
+        host=host,
+        visitor=visitor,
+
+        t1_play=t1_play,
+        t1_staff=t1_staff,
+        t1_bench=t1_bench,
+
+        t2_play=t2_play,
+        t2_staff=t2_staff,
+        t2_bench=t2_bench
+    )
+@app.route("/current-squads-2")
+def current_squads_2():
+
+    import os
+    import json
+
+    path = "data/current_match_2.txt"
+
+    if not os.path.exists(path):
+        return "No Live Match"
+
+    data = {}
+
+    with open(path, encoding="utf-8") as f:
+
+        for line in f:
+
+            if "=" in line:
+
+                k, v = line.strip().split("=", 1)
+
+                data[k] = v
+
+    host = data.get("host", "")
+    visitor = data.get("visitor", "")
+
+    host_key = host.replace(" ", "_") + "_squad"
+    visitor_key = visitor.replace(" ", "_") + "_squad"
+
+    t1 = json.loads(data.get(host_key, "[]"))
+    t2 = json.loads(data.get(visitor_key, "[]"))
+
+    # 🔥 FILTER
+    t1_play = [p for p in t1 if len(p.get("extra", [])) == 0]
+    t1_staff = [p for p in t1 if "stf" in [x.lower() for x in p.get("extra", [])]]
+    t1_bench = [p for p in t1 if "bench" in [x.lower() for x in p.get("extra", [])]]
+
+    t2_play = [p for p in t2 if len(p.get("extra", [])) == 0]
+    t2_staff = [p for p in t2 if "stf" in [x.lower() for x in p.get("extra", [])]]
+    t2_bench = [p for p in t2 if "bench" in [x.lower() for x in p.get("extra", [])]]
+
+    return render_template(
+        "current_squads_2.html",
 
         host=host,
         visitor=visitor,
@@ -6250,6 +8338,598 @@ def delete_comment(i):
     with open("data/comments.txt", "w",encoding="utf-8") as f:
         f.writelines(data)
     return redirect("/comments-admin")
+
+
+@app.route("/player-details")
+def player_details():
+
+    import os
+
+    player = request.args.get("name", "").strip()
+
+    team = "Unknown"
+
+    # TEAM FIND
+    try:
+
+        for file in os.listdir("data/teamlist"):
+
+            path = os.path.join(
+                "data/teamlist",
+                file
+            )
+
+            with open(path, encoding="utf-8") as f:
+
+                content = f.read()
+
+                if player in content:
+
+                    team = file.replace(".txt", "")
+
+                    break
+
+    except:
+        pass
+
+    batting = {
+
+        "matches": 0,
+        "innings": 0,
+        "runs": 0,
+        "highest": 0,
+        "fifty": 0,
+        "hundred": 0
+    }
+
+    bowling = {
+
+        "matches": 0,
+        "innings": 0,
+        "wickets": 0,
+        "best": 0,
+        "runs": 0
+    }
+
+   
+
+    folder = "data/all_match"
+    counted_matches = set()
+    for file in os.listdir(folder):
+
+        if not (
+            file.endswith("_1st.txt")
+            or
+            file.endswith("_2nd.txt")
+        ):
+            continue
+
+        path = os.path.join(folder, file)
+
+        try:
+
+            with open(
+                path,
+                encoding="utf-8"
+            ) as f:
+
+                lines = f.readlines()
+
+        except:
+            continue
+
+        match_id = file.replace(
+            "_1st.txt",
+            ""
+        ).replace(
+            "_2nd.txt",
+            ""
+        )
+                # 🔥 MATCH COUNT (PLAYING XI)
+
+        match_played = False
+
+        for line in lines:
+
+            if "_squad=" in line:
+
+                try:
+
+                    import json
+
+                    squad = json.loads(
+                        line.split("=",1)[1]
+                    )
+
+                    for p in squad:
+
+                        if (
+                            p.get("name","").strip()
+                            == player
+                            and
+                            len(
+                                p.get("extra",[])
+                            ) == 0
+                        ):
+
+                            match_played = True
+                            break
+
+                except:
+                    pass
+
+        if ( match_played and match_id not in counted_matches ):
+            batting["matches"] += 1
+
+            bowling["matches"] += 1
+
+            counted_matches.add(match_id)
+        # BATTING
+        for line in lines:
+
+            if line.startswith(
+                "batsman_log="
+            ):
+
+                log = line.split(
+                    "=",
+                    1
+                )[1]
+
+                for e in log.split("|"):
+
+                    if "=" not in e:
+                        continue
+
+                    name, stats = e.split("=")
+
+                    if (
+                        name.strip()
+                        != player
+                    ):
+                        continue
+
+                    vals = stats.split(",")
+
+                    runs = int(vals[0])
+
+                    batting[
+                        "innings"
+                    ] += 1
+
+                    batting[
+                        "runs"
+                    ] += runs
+
+                    batting[
+                        "highest"
+                    ] = max(
+                        batting[
+                            "highest"
+                        ],
+                        runs
+                    )
+
+                    if runs >= 50:
+                        batting[
+                            "fifty"
+                        ] += 1
+
+                    if runs >= 100:
+                        batting[
+                            "hundred"
+                        ] += 1
+
+                   
+
+        # BOWLING
+        for line in lines:
+
+            if line.startswith(
+                "bowler_log="
+            ):
+
+                log = line.split(
+                    "=",
+                    1
+                )[1]
+
+                for e in log.split("|"):
+
+                    if "=" not in e:
+                        continue
+
+                    name, stats = e.split("=")
+
+                    if (
+                        name.strip()
+                        != player
+                    ):
+                        continue
+
+                    vals = stats.split(",")
+
+                    runs = int(vals[1])
+
+                    wickets = int(vals[3])
+
+                    bowling[
+                        "innings"
+                    ] += 1
+
+                    bowling[
+                        "runs"
+                    ] += runs
+
+                    bowling[
+                        "wickets"
+                    ] += wickets
+
+                    bowling[
+                        "best"
+                    ] = max(
+                        bowling[
+                            "best"
+                        ],
+                        wickets
+                    )
+
+                    
+
+    
+
+    batting_avg = round(
+        batting["runs"] /
+        batting["innings"],
+        2
+    ) if batting[
+        "innings"
+    ] else 0
+
+    bowling_avg = round(
+        bowling["runs"] /
+        bowling["wickets"],
+        2
+    ) if bowling[
+        "wickets"
+    ] else 0
+
+    image = None
+
+    for ext in [
+        ".webp",
+        ".jpg",
+        ".jpeg",
+        ".png"
+    ]:
+
+        p = (
+            f"static/images/"
+            f"player_images/"
+            f"{player}{ext}"
+        )
+
+        if os.path.exists(p):
+
+            image = (
+                f"images/"
+                f"player_images/"
+                f"{player}{ext}"
+            )
+
+            break
+
+    return render_template(
+        "player_details.html",
+
+        player=player,
+
+        team=team,
+
+        image=image,
+
+        batting=batting,
+
+        bowling=bowling,
+
+        batting_avg=batting_avg,
+
+        bowling_avg=bowling_avg
+    )
+
+# =========================================================
+# PDF MATCH VIEW
+# =========================================================
+
+@app.route("/pdf-match-view/<filename>")
+def pdf_match_view(filename):
+
+    import os
+    import json
+    import ast
+
+    filename = os.path.basename(filename)
+
+    if not filename.endswith("_1st.txt"):
+        return "Invalid match file", 400
+
+    folder = "data/all_match"
+
+    first_path = os.path.join(folder, filename)
+
+    if not os.path.exists(first_path):
+        return "Match not found", 404
+
+    second_path = first_path.replace(
+        "_1st.txt",
+        "_2nd.txt"
+    )
+
+    # -----------------------------------------------------
+    # LOAD TXT
+    # -----------------------------------------------------
+
+    def load_file(path):
+
+        data = {}
+
+        if not os.path.exists(path):
+            return data
+
+        with open(
+            path,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            for line in f:
+
+                if "=" in line:
+
+                    k, v = line.rstrip().split(
+                        "=",
+                        1
+                    )
+
+                    data[k] = v
+
+        return data
+
+    first = load_file(first_path)
+    second = load_file(second_path)
+
+    # -----------------------------------------------------
+    # SAFE JSON
+    # -----------------------------------------------------
+
+    def safe_json(value):
+
+        if not value:
+            return []
+
+        try:
+            return json.loads(value)
+
+        except Exception:
+
+            try:
+                return ast.literal_eval(value)
+
+            except Exception:
+                return []
+
+    # -----------------------------------------------------
+    # WICKETS
+    # -----------------------------------------------------
+
+    first["wickets_log"] = safe_json(
+        first.get("wickets_log", "[]")
+    )
+
+    second["wickets_log"] = safe_json(
+        second.get("wickets_log", "[]")
+    )
+
+    # -----------------------------------------------------
+    # 🔥 PARTNERSHIPS
+    # -----------------------------------------------------
+
+    first["partnerships"] = safe_json(
+        first.get("partnerships", "[]")
+    )
+
+    second["partnerships"] = safe_json(
+        second.get("partnerships", "[]")
+    )
+
+    # -----------------------------------------------------
+    # 🔥 FALL OF WICKETS
+    # -----------------------------------------------------
+
+    first["fall_of_wickets"] = safe_json(
+        first.get("fall_of_wickets", "[]")
+    )
+
+    second["fall_of_wickets"] = safe_json(
+        second.get("fall_of_wickets", "[]")
+    )
+
+    # -----------------------------------------------------
+    # DISMISSALS
+    # -----------------------------------------------------
+
+    def build_map(log):
+
+        result = {}
+
+        for w in log:
+
+            try:
+
+                name = str(
+                    w.get(
+                        "batsman",
+                        ""
+                    )
+                ).split("(")[0].strip().lower()
+
+                typ = str(
+                    w.get(
+                        "type",
+                        ""
+                    )
+                ).lower()
+
+                bowler = w.get(
+                    "bowler",
+                    ""
+                )
+
+                if typ == "bowled":
+
+                    result[name] = f"b {bowler}"
+
+                elif "catch" in typ:
+
+                    result[name] = f"c b {bowler}"
+
+                elif "run out" in typ:
+
+                    result[name] = "run out"
+
+                elif typ == "lbw":
+
+                    result[name] = f"lbw b {bowler}"
+
+                else:
+
+                    result[name] = w.get(
+                        "type",
+                        "out"
+                    )
+
+            except Exception:
+                pass
+
+        return result
+
+    first["dismissals"] = build_map(
+        first["wickets_log"]
+    )
+
+    second["dismissals"] = build_map(
+        second["wickets_log"]
+    )
+
+    # -----------------------------------------------------
+    # RESULT / POM
+    # -----------------------------------------------------
+
+    result = second.get(
+        "match_result",
+        ""
+    )
+
+    pom = second.get(
+        "Man_of_the_Match",
+        ""
+    )
+
+    return render_template(
+        "pdf_match.html",
+        first=first,
+        second=second,
+        result=result,
+        pom=pom,
+        match_number=first.get(
+            "match_number",
+            ""
+        ),
+        match_time=first.get(
+            "match_time",
+            ""
+        ),
+        team1=first.get(
+            "batting",
+            ""
+        ),
+        team2=second.get(
+            "batting",
+            ""
+        ) or first.get(
+            "bowling",
+            ""
+        )
+    )
+
+
+# =========================================================
+# DOWNLOAD MATCH PDF
+# =========================================================
+
+@app.route("/download-match-pdf/<filename>")
+def download_match_pdf(filename):
+
+    import os
+
+    filename = os.path.basename(filename)
+
+    if not filename.endswith("_1st.txt"):
+        return "Invalid match file", 400
+
+    first_path = os.path.join(
+        "data/all_match",
+        filename
+    )
+
+    if not os.path.exists(first_path):
+        return "Match not found", 404
+
+    try:
+
+        url = url_for(
+            "pdf_match_view",
+            filename=filename,
+            _external=False
+        )
+
+        # IMPORTANT:
+        # Use localhost/internal Flask URL.
+        # Do NOT use the public ngrok URL here.
+        url = "http://127.0.0.1:5000" + url
+
+        #  Was: launch a brand new headless Chromium browser here, every single time.
+        #  Now: reuse the one shared browser (render_match_pdf, defined near the top of
+        #  this file) -- only a lightweight page open/close per download, not a full
+        #  browser startup. wait_until="load" instead of "networkidle" also means it no
+        #  longer waits for background requests that may never fully go idle.
+        pdf_bytes = render_match_pdf(url)
+
+        pdf_filename = filename.replace(
+            "_1st.txt",
+            "_Scorecard.pdf"
+        )
+
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=pdf_filename
+        )
+
+    except Exception as e:
+
+        print(
+            "PDF GENERATION ERROR:",
+            e
+        )
+
+        return (
+            f"PDF generation failed: {e}",
+            500
+        )
+
+
 
 
 if __name__ == "__main__":

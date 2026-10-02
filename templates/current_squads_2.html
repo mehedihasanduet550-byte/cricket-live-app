@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Current Squads</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet"
+    href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<div class="nav">
+    <a href="/match-2">Back</a>
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+</div>
+
+<h2 class="fixture-title">🏏 Current Match Squads</h2>
+
+<div class="squad-header">
+
+    <span style="display:flex; align-items:center; gap:6px;">
+        <img src="{{ url_for('static', filename='images/teams/' + host + '.webp') }}"
+             style="width:65px; height:45px;">
+        {{ host|upper }}
+    </span>
+
+    <span style="display:flex; align-items:center; gap:6px;">
+        <img src="{{ url_for('static', filename='images/teams/' + visitor + '.webp') }}"
+             style="width:65px; height:45px;">
+        {{ visitor|upper }}
+    </span>
+
+</div>
+
+<div class="squad-grid">
+
+    <!-- PLAYING -->
+    <div class="team-card row-card center-card playing"
+    style="grid-column:1/-1;">
+        <div>Playing XI</div>
+    </div>
+
+    <!-- TEAM 1 -->
+    <div>
+    {% for p in t1_play %}
+
+        <div class="player-row">
+
+            <div class="player-left">
+
+                <div class="avatar">
+
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
+                    onerror="this.style.display='none';
+                    this.nextElementSibling.style.display='flex';">
+
+                    <div class="initial">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
+
+                </div>
+
+                <div>
+                    <div class="p-name">{{ p.name }}</div>
+                    <div class="p-role">{{ p.role }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+    </div>
+
+    <!-- TEAM 2 -->
+    <div>
+    {% for p in t2_play %}
+
+        <div class="player-row">
+
+            <div class="player-left">
+
+                <div class="avatar">
+
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
+                    onerror="this.style.display='none';
+                    this.nextElementSibling.style.display='flex';">
+
+                    <div class="initial">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
+
+                </div>
+
+                <div>
+                    <div class="p-name">{{ p.name }}</div>
+                    <div class="p-role">{{ p.role }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+    </div>
+
+    <!-- BENCH -->
+    <div class="team-card row-card center-card bench"
+    style="grid-column:1/-1;">
+        <div>Bench</div>
+    </div>
+
+    <!-- TEAM 1 -->
+    <div>
+    {% for p in t1_bench %}
+
+        <div class="player-row">
+
+            <div class="player-left">
+
+                <div class="avatar">
+
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
+                    onerror="this.style.display='none';
+                    this.nextElementSibling.style.display='flex';">
+
+                    <div class="initial">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
+
+                </div>
+
+                <div>
+                    <div class="p-name">{{ p.name }}</div>
+                    <div class="p-role">{{ p.role }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+    </div>
+
+    <!-- TEAM 2 -->
+    <div>
+    {% for p in t2_bench %}
+
+        <div class="player-row">
+
+            <div class="player-left">
+
+                <div class="avatar">
+
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
+                    onerror="this.style.display='none';
+                    this.nextElementSibling.style.display='flex';">
+
+                    <div class="initial">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
+
+                </div>
+
+                <div>
+                    <div class="p-name">{{ p.name }}</div>
+                    <div class="p-role">{{ p.role }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+    </div>
+
+    <!-- STAFF -->
+    <div class="team-card row-card center-card staff"
+    style="grid-column:1/-1;">
+        <div>Supporting Staff</div>
+    </div>
+
+    <!-- TEAM 1 -->
+    <div>
+    {% for p in t1_staff %}
+
+        <div class="player-row">
+
+            <div class="player-left">
+
+                <div class="avatar">
+
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
+                    onerror="this.style.display='none';
+                    this.nextElementSibling.style.display='flex';">
+
+                    <div class="initial">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
+
+                </div>
+
+                <div>
+                    <div class="p-name">{{ p.name }}</div>
+                    <div class="p-role">{{ p.role }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+    </div>
+
+    <!-- TEAM 2 -->
+    <div>
+    {% for p in t2_staff %}
+
+        <div class="player-row">
+
+            <div class="player-left">
+
+                <div class="avatar">
+
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
+                    onerror="this.style.display='none';
+                    this.nextElementSibling.style.display='flex';">
+
+                    <div class="initial">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
+
+                </div>
+
+                <div>
+                    <div class="p-name">{{ p.name }}</div>
+                    <div class="p-role">{{ p.role }}</div>
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+    </div>
+
+</div>
+
+</body>
+</html>

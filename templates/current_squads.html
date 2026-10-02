@@ -56,13 +56,20 @@
 
                 <div class="avatar">
 
-                    <img loading="lazy" src="/static/images/players/{{ p.name }}.webp"
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
                     onerror="this.style.display='none';
                     this.nextElementSibling.style.display='flex';">
 
                     <div class="initial">
                         {{ p.name[0] }}
                     </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
 
                 </div>
 
@@ -88,13 +95,20 @@
 
                 <div class="avatar">
 
-                    <img loading="lazy" src="/static/images/players/{{ p.name }}.webp"
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
                     onerror="this.style.display='none';
                     this.nextElementSibling.style.display='flex';">
 
                     <div class="initial">
                         {{ p.name[0] }}
                     </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
 
                 </div>
 
@@ -126,13 +140,20 @@
 
                 <div class="avatar">
 
-                    <img loading="lazy" src="/static/images/players/{{ p.name }}.webp"
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
                     onerror="this.style.display='none';
                     this.nextElementSibling.style.display='flex';">
 
                     <div class="initial">
                         {{ p.name[0] }}
                     </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
 
                 </div>
 
@@ -158,13 +179,20 @@
 
                 <div class="avatar">
 
-                    <img loading="lazy" src="/static/images/players/{{ p.name }}.webp"
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
                     onerror="this.style.display='none';
                     this.nextElementSibling.style.display='flex';">
 
                     <div class="initial">
                         {{ p.name[0] }}
                     </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
 
                 </div>
 
@@ -196,13 +224,20 @@
 
                 <div class="avatar">
 
-                    <img loading="lazy" src="/static/images/players/{{ p.name }}.webp"
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
                     onerror="this.style.display='none';
                     this.nextElementSibling.style.display='flex';">
 
                     <div class="initial">
                         {{ p.name[0] }}
                     </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
 
                 </div>
 
@@ -228,13 +263,20 @@
 
                 <div class="avatar">
 
-                    <img loading="lazy" src="/static/images/players/{{ p.name }}.webp"
+                    {%- set photo = player_photo_url(p.name) %}
+                    {%- if photo %}
+                    <img loading="lazy" src="{{ photo }}"
                     onerror="this.style.display='none';
                     this.nextElementSibling.style.display='flex';">
 
                     <div class="initial">
                         {{ p.name[0] }}
                     </div>
+                    {%- else %}
+                    <div class="initial" style="display:flex">
+                        {{ p.name[0] }}
+                    </div>
+                    {%- endif %}
 
                 </div>
 

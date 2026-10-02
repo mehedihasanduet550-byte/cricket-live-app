@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Match</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+<div class="nav">
+    <a href="/stats">Back</a>
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+</div>
+<!-- 🔝 NAV -->
+<div class="nav">
+    <button onclick="showTab('live')">Live</button>
+    <button onclick="showTab('score')">Scorecard</button>
+    <a href="/current-squads-2"
+        style="background:rgb(0, 146, 112); color:white; border-radius:8px;">
+        Squads
+    </a>
+    
+</div>
+
+<!-- 🔴 LIVE TAB -->
+<div id="liveTab">
+    <div id="matchLiveContainer" class="live-container" style="padding: 5px;">
+        {% include "match_live_partial.html" %}
+    </div>
+</div>
+
+<!-- 🔵 SCORE -->
+<div id="scoreTab" style="display:none;">
+    {% include "partials/history_scorecard.html" %}
+</div>
+
+<!-- 🟢 SQUAD -->
+<div id="squadTab" style="display:none;">
+    {% include "partials/history_squad.html" %}
+</div>
+
+<!-- 🔥 SCRIPT -->
+<script>
+let modalOpen = false;
+function reloadScorecard(){
+    let url = window.location.href;
+
+    if(url.includes("?")){
+        url += "&t=" + Date.now();
+    }else{
+        url += "?t=" + Date.now();
+    }
+
+    fetch(url)
+        .then(res => res.text())
+        .then(html => {
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(html, "text/html");
+
+            let newScore = doc.querySelector("#scoreContent").innerHTML;
+            document.querySelector("#scoreContent").innerHTML = newScore;
+        });
+}
+
+function showTab(tab){
+    document.getElementById("liveTab").style.display = "none";
+    document.getElementById("scoreTab").style.display = "none";
+    document.getElementById("squadTab").style.display = "none";
+
+    if(tab === "live") document.getElementById("liveTab").style.display = "block";
+    else if(tab === "score") document.getElementById("scoreTab").style.display = "block";
+    else document.getElementById("squadTab").style.display = "block";
+
+    if(tab === "score") reloadScorecard();
+}
+
+// 🔥 AUTO RELOAD (score tab open থাকলে)
+setInterval(() => {
+    if(document.getElementById("scoreTab").style.display === "block"){
+        reloadScorecard();
+    }
+}, 1000);
+
+
+// 🔥 LIVE AUTO UPDATE
+function reInitLive(){
+    if(typeof updateCRR === "function") updateCRR();
+    if(typeof updateRRR === "function") updateRRR();
+}
+
+setInterval(() => {
+     if(modalOpen) return; 
+    fetch("/match-live-data-2")
+        .then(res => res.text())
+        .then(html => {
+            document.getElementById("matchLiveContainer").innerHTML = html;
+
+            if(typeof syncPartnershipFromDOM === "function"){
+                syncPartnershipFromDOM();   // 🔥 MAIN FIX
+            }
+
+            reInitLive();
+        });
+}, 1000);
+
+</script>
+<script src="{{ url_for('static', filename='css/js/script2.js') }}"></script>
+<script>
+
+let savedOverScroll = 0;
+
+function saveOverScroll(pos){
+    savedOverScroll = pos;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    let observer = new MutationObserver(() => {
+
+        let el = document.getElementById("overLogScroll");
+
+        if(el){
+            el.scrollLeft = savedOverScroll;
+        }
+
+    });
+
+    observer.observe(document.getElementById("matchLiveContainer"), {
+        childList: true,
+        subtree: true
+    });
+
+});
+
+</script>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+</body>
+</html>

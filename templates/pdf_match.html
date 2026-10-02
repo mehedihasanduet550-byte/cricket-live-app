@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>Match Summary</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+
+        @page {
+            size: A4;
+            margin: 8mm;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+
+            /*
+             * Existing website background/color
+             * will come from style.css
+             */
+
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        /*
+         * Browser UI must NOT appear in PDF
+         */
+
+        .nav,
+        .tab-buttons,
+        button,
+        .no-print {
+            display: none !important;
+        }
+
+        /*
+         * Scorecard must always be visible
+         */
+
+        #scoreTab {
+            display: block !important;
+        }
+
+        /*
+         * Do not let Chromium remove backgrounds
+         */
+
+        .team-header,
+        .table-header,
+        .table-row,
+        .summary-line,
+        .partnership-row,
+        .fow-header {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        /*
+         * Prevent ugly row splitting
+         */
+
+        .team-header,
+        .table-header,
+        .table-row,
+        .summary-line,
+        .partnership-row {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        /*
+         * Match Summary heading
+         */
+
+        .pdf-title {
+            text-align: center;
+            margin: 4px 0 3px 0;
+        }
+
+        /*
+         * MATCH NUMBER
+         */
+
+        .pdf-match-number {
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 2px 0;
+        }
+
+        /*
+         * DATE + TIME
+         */
+
+        .pdf-match-date {
+            text-align: center;
+            font-size: 10px;
+            margin: 2px 0 7px 0;
+        }
+
+        /*
+         * 🔥 TEAM VS TEAM
+         */
+
+        .pdf-matchup {
+
+            display: flex;
+
+            justify-content: center;
+
+            align-items: center;
+
+            gap: 8px;
+
+            width: 100%;
+
+            font-size: 13px;
+
+            font-weight: bold;
+
+            margin: 5px 0 8px 0;
+
+            white-space: nowrap;
+        }
+
+        .pdf-matchup span {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .pdf-matchup .vs {
+            font-size: 12px;
+            font-weight: bold;
+            margin: 0 2px !important;
+        }
+
+        /*
+         * Result
+         */
+
+        .pdf-result {
+
+            text-align: center;
+
+            margin: 3px 0 10px 0;
+
+        }
+
+        /*
+         * Keep images visible
+         */
+
+        img {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+
+        /* =========================================
+           PDF PARTNERSHIP / FOW
+           ========================================= */
+        .partnership-row {
+            display: grid;
+            grid-template-columns: 1fr 90px 1fr;
+            align-items: center;
+            min-height: 25px;
+            padding: 3px 7px;
+            box-sizing: border-box;
+            font-size: 10px;
+        }
+
+        .partnership-left {
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .partnership-center {
+            text-align: center;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .partnership-right {
+            text-align: right;
+            font-weight: 600;
+        }
+
+        .fow-header {
+            display: grid !important;
+            grid-template-columns: 1fr 90px 1fr;
+        }
+
+        .partnership-row,
+        .pdf-player-match {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        @media print {
+            html, body {
+                overflow: visible !important;
+            }
+
+            #scoreTab {
+                min-height: 0 !important;
+            }
+        }
+
+        /* =========================================
+           BEAUTIFUL PLAYER OF THE MATCH
+           ========================================= */
+        .pdf-player-match {
+            margin: 12px auto 4px auto;
+            max-width: 520px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,.20);
+            background: linear-gradient(135deg, rgba(255,193,7,.16), rgba(255,255,255,.05));
+            box-shadow: 0 2px 8px rgba(0,0,0,.18);
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        .pdf-player-match-title {
+            text-align: center;
+            padding: 5px 8px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .5px;
+            background: rgba(255,193,7,.18);
+        }
+
+        .pdf-player-match-name {
+            text-align: center;
+            padding: 8px 10px 9px;
+            font-size: 16px;
+            font-weight: 900;
+        }
+
+        /* Keep optional sections compact and avoid isolated page breaks */
+        .partnership-row,
+        .fow-header,
+        .pdf-player-match {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .pdf-player-match {
+            break-before: auto;
+            page-break-before: auto;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<div id="scoreTab">
+
+    <!-- ========================================= -->
+    <!-- MATCH SUMMARY -->
+    <!-- ========================================= -->
+
+    <h2 class="fixture-title pdf-title">
+        🏏 Match Summary
+    </h2>
+
+    <!-- MATCH NUMBER -->
+
+    {% if first.match_number %}
+
+    <div class="pdf-match-number">
+        MATCH-{{ "%02d"|format(first.match_number|int) }}
+    </div>
+
+    {% endif %}
+
+
+    <!-- DATE + TIME -->
+
+    {% if first.match_time %}
+
+    <div class="pdf-match-date">
+        {{ first.match_time }}
+    </div>
+
+    {% endif %}
+
+
+    <!-- ========================================= -->
+    <!-- TEAM VS TEAM -->
+    <!-- ========================================= -->
+
+    <div class="pdf-matchup">
+
+        <span>
+            🔥 {{ first.batting }}
+        </span>
+
+        <span class="vs">
+            VS
+        </span>
+
+        <span>
+            ⚔️ {{ second.batting or first.bowling }}
+        </span>
+
+    </div>
+
+
+    <!-- ========================================= -->
+    <!-- RESULT -->
+    <!-- ========================================= -->
+
+    {% if result %}
+
+    <h3 class="result-text pdf-result">
+        {{ result }}
+    </h3>
+
+    {% endif %}
+
+
+    <!-- ========================================= -->
+    <!-- FIRST INNINGS -->
+    <!-- ========================================= -->
+
+    <div class="team-header">
+
+        <img src="/static/images/teams/{{ first.batting|lower }}.webp">
+
+        <span>
+            {{ first.batting }}
+        </span>
+
+        <span class="score-right">
+
+            {{ first.score }}-{{ first.wickets }}
+
+            ({{ first.over }}.{{ first.ball }})
+
+        </span>
+
+    </div>
+
+
+    <!-- BATSMAN -->
+
+    <div class="table-header">
+
+        <span>Batsman</span>
+        <span>R</span>
+        <span>B</span>
+        <span>4s</span>
+        <span>6s</span>
+        <span>SR</span>
+
+    </div>
+
+
+    {% for b in first.batsman_log.split("|") %}
+
+        {% if b.strip() and "=" in b %}
+
+            {% set name = b.split("=")[0] %}
+            {% set s = b.split("=")[1].split(",") %}
+
+            <div class="table-row">
+
+                <div>
+
+                    <div class="name">
+                        {{ name }}
+                    </div>
+
+                    {% set clean_name =
+                        name.split('(')[0].strip().lower()
+                    %}
+
+                    <div class="out">
+
+                        {{ first.dismissals.get(
+                            clean_name,
+                            "not out"
+                        ) }}
+
+                    </div>
+
+                </div>
+
+                <span>
+                    {{ s[0] if s|length > 0 else "0" }}
+                </span>
+
+                <span>
+                    {{ s[1] if s|length > 1 else "0" }}
+                </span>
+
+                <span>
+                    {{ s[2] if s|length > 2 else "0" }}
+                </span>
+
+                <span>
+                    {{ s[3] if s|length > 3 else "0" }}
+                </span>
+
+                <span>
+                    {{ s[4] if s|length > 4 else "0" }}
+                </span>
+
+            </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+
+    <!-- TOTAL -->
+
+    <div class="summary-line">
+
+        <span class="left">
+            Extras {{ first.extra }}
+        </span>
+
+        <span class="right">
+
+            Total {{ first.score }}-{{ first.wickets }}
+
+            ({{ first.over }}.{{ first.ball }})
+
+        </span>
+
+    </div>
+
+
+    <!-- BOWLER -->
+
+    <div class="table-header">
+
+        <span>Bowler</span>
+        <span>O</span>
+        <span>R</span>
+        <span>M</span>
+        <span>W</span>
+        <span>ER</span>
+
+    </div>
+
+
+    {% for b in first.bowler_log.split("|") %}
+
+        {% if b.strip() and "=" in b %}
+
+            {% set name = b.split("=")[0] %}
+            {% set s = b.split("=")[1].split(",") %}
+
+            <div class="table-row">
+
+                <span>{{ name }}</span>
+
+                <span>{{ s[0] }}</span>
+                <span>{{ s[1] }}</span>
+                <span>{{ s[2] }}</span>
+                <span>{{ s[3] }}</span>
+                <span>{{ s[4] }}</span>
+
+            </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+
+
+    <!-- ========================================= -->
+    <!-- PARTNERSHIPS + FOW : FIRST INNINGS -->
+    <!-- ========================================= -->
+
+    {% set ns1 = namespace(has_partnership=false) %}
+    {% for p in first.partnerships or [] %}
+        {% if p.striker or p.nonStriker or p.runs or p.balls %}
+            {% set ns1.has_partnership = true %}
+        {% endif %}
+    {% endfor %}
+
+    {% if ns1.has_partnership %}
+    <div class="table-header">
+        <span>Partnerships</span>
+        <span></span>
+        <span></span>
+    </div>
+
+    {% for p in first.partnerships or [] %}
+        {% if p.striker or p.nonStriker or p.runs or p.balls %}
+        <div class="partnership-row">
+            <div class="partnership-left">{{ p.striker }}</div>
+            <div class="partnership-center">{{ p.runs }} ({{ p.balls }})</div>
+            <div class="partnership-right">{{ p.nonStriker }}</div>
+        </div>
+        {% endif %}
+    {% endfor %}
+    {% endif %}
+
+    {% set fow1 = namespace(has_fow=false) %}
+    {% for w in first.fall_of_wickets or [] %}
+        {% if w.player or w.run or w.wicket or w.over %}
+            {% set fow1.has_fow = true %}
+        {% endif %}
+    {% endfor %}
+
+    {% if fow1.has_fow %}
+    <div class="table-header fow-header">
+        <span>Fall of Wickets</span>
+        <span>Score</span>
+        <span>Over</span>
+    </div>
+
+    {% for w in first.fall_of_wickets or [] %}
+        {% if w.player or w.run or w.wicket or w.over %}
+        <div class="partnership-row">
+            <div class="partnership-left">{{ w.player }}</div>
+            <div class="partnership-center">{{ w.run }}-{{ w.wicket }}</div>
+            <div class="partnership-right">{{ w.over }}</div>
+        </div>
+        {% endif %}
+    {% endfor %}
+    {% endif %}
+
+    <!-- ========================================= -->
+    <!-- SECOND INNINGS -->
+    <!-- ========================================= -->
+
+    {% if second.score %}
+
+    <div class="team-header">
+
+        <img src="/static/images/teams/{{ second.batting|lower }}.webp">
+
+        <span>
+            {{ second.batting }}
+        </span>
+
+        <span class="score-right">
+
+            {{ second.score }}-{{ second.wickets }}
+
+            ({{ second.over }}.{{ second.ball }})
+
+        </span>
+
+    </div>
+
+
+    <!-- BATSMAN -->
+
+    <div class="table-header">
+
+        <span>Batsman</span>
+        <span>R</span>
+        <span>B</span>
+        <span>4s</span>
+        <span>6s</span>
+        <span>SR</span>
+
+    </div>
+
+
+    {% for b in second.batsman_log.split("|") %}
+
+        {% if b.strip() and "=" in b %}
+
+            {% set name = b.split("=")[0] %}
+            {% set s = b.split("=")[1].split(",") %}
+
+            <div class="table-row">
+
+                <div>
+
+                    <div class="name">
+                        {{ name }}
+                    </div>
+
+                    {% set clean_name =
+                        name.split('(')[0].strip().lower()
+                    %}
+
+                    <div class="out">
+
+                        {{ second.dismissals.get(
+                            clean_name,
+                            "not out"
+                        ) }}
+
+                    </div>
+
+                </div>
+
+                <span>{{ s[0] }}</span>
+                <span>{{ s[1] }}</span>
+                <span>{{ s[2] }}</span>
+                <span>{{ s[3] }}</span>
+                <span>{{ s[4] }}</span>
+
+            </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+
+    <!-- TOTAL -->
+
+    <div class="summary-line">
+
+        <span class="left">
+            Extras {{ second.extra }}
+        </span>
+
+        <span class="right">
+
+            Total {{ second.score }}-{{ second.wickets }}
+
+            ({{ second.over }}.{{ second.ball }})
+
+        </span>
+
+    </div>
+
+
+    <!-- BOWLER -->
+
+    <div class="table-header">
+
+        <span>Bowler</span>
+        <span>O</span>
+        <span>R</span>
+        <span>M</span>
+        <span>W</span>
+        <span>ER</span>
+
+    </div>
+
+
+    {% for b in second.bowler_log.split("|") %}
+
+        {% if b.strip() and "=" in b %}
+
+            {% set name = b.split("=")[0] %}
+            {% set s = b.split("=")[1].split(",") %}
+
+            <div class="table-row">
+
+                <span>{{ name }}</span>
+
+                <span>{{ s[0] }}</span>
+                <span>{{ s[1] }}</span>
+                <span>{{ s[2] }}</span>
+                <span>{{ s[3] }}</span>
+                <span>{{ s[4] }}</span>
+
+            </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+    {% endif %}
+
+
+
+    <!-- ========================================= -->
+    <!-- PARTNERSHIPS + FOW : SECOND INNINGS -->
+    <!-- ========================================= -->
+
+    {% if second.score %}
+
+    {% set ns2 = namespace(has_partnership=false) %}
+
+    {% for p in second.partnerships or [] %}
+        {% if p.striker|string|trim
+              or p.nonStriker|string|trim
+              or p.runs is not none
+              or p.balls is not none %}
+            {% set ns2.has_partnership = true %}
+        {% endif %}
+    {% endfor %}
+
+    {% if ns2.has_partnership %}
+
+    <div class="table-header">
+        <span>Partnerships</span>
+        <span></span>
+        <span></span>
+    </div>
+
+    {% for p in second.partnerships or [] %}
+
+        {% if p.striker|string|trim or p.nonStriker|string|trim %}
+
+        <div class="partnership-row">
+
+            <div class="partnership-left">
+                {{ p.striker }}
+            </div>
+
+            <div class="partnership-center">
+                {{ p.runs }} ({{ p.balls }})
+            </div>
+
+            <div class="partnership-right">
+                {{ p.nonStriker }}
+            </div>
+
+        </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+    {% endif %}
+
+
+    {% set fow2 = namespace(has_fow=false) %}
+
+    {% for w in second.fall_of_wickets or [] %}
+        {% if w.player|string|trim
+              or w.run is not none
+              or w.wicket is not none
+              or w.over|string|trim %}
+            {% set fow2.has_fow = true %}
+        {% endif %}
+    {% endfor %}
+
+    {% if fow2.has_fow %}
+
+    <div class="table-header fow-header">
+        <span>Fall of Wickets</span>
+        <span>Score</span>
+        <span>Over</span>
+    </div>
+
+    {% for w in second.fall_of_wickets or [] %}
+
+        {% if w.player|string|trim %}
+
+        <div class="partnership-row">
+
+            <div class="partnership-left">
+                {{ w.player }}
+            </div>
+
+            <div class="partnership-center">
+                {{ w.run }}-{{ w.wicket }}
+            </div>
+
+            <div class="partnership-right">
+                {{ w.over }}
+            </div>
+
+        </div>
+
+        {% endif %}
+
+    {% endfor %}
+
+    {% endif %}
+
+    {% endif %}
+
+
+    <!-- ========================================= -->
+    <!-- PLAYER OF MATCH -->
+    <!-- ========================================= -->
+
+    {% if second.Man_of_the_Match %}
+
+    <div class="pdf-player-match">
+        <div class="pdf-player-match-title">
+            🏆 PLAYER OF THE MATCH
+        </div>
+
+        <div style="text-align:center; margin:8px 0 5px 0;">
+            <img
+                src="/static/images/players/{{ second.Man_of_the_Match | replace(' ', '%20') }}.webp"
+                style="width:90px; height:90px; object-fit:cover; border-radius:50%;"
+                onerror="this.style.display='none';"
+            >
+        </div>
+
+        <div class="pdf-player-match-name">
+            ⭐ {{ second.Man_of_the_Match }}
+        </div>
+    </div>
+
+    {% endif %}
+
+
+</div>
+
+</body>
+</html>

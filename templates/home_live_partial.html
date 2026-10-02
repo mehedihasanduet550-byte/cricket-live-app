@@ -1,6 +1,6 @@
-{% if live_match %}
+{% for live_match in live_matches %}
 
-<div class="card live" onclick="window.location.href='/match'">
+<div class="card live" onclick="window.location.href='{{ live_match.page }}?file={{ live_match.file }}'">
 
     <!-- 🔴 STATUS -->
     <div class="status-badge {{ live_match.status|lower }}">
@@ -74,4 +74,4 @@
 
 </div>
 
-{% endif %}
+{% endfor %}

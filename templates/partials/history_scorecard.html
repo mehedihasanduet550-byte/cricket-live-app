@@ -29,7 +29,7 @@
 
     <div class="table-row">
         <div>
-            <div class="name">{{ name }}</div>
+            <div class="name" onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">{{ name }}</div>
 
             {% set clean_name = name.split('(')[0].strip().lower() %}
             <div class="out">
@@ -74,7 +74,7 @@
     {% set s = parts[1].split(",") if parts|length > 1 else ["0","0","0","0","0"] %}
 
     <div class="table-row">
-        <span>{{ name }}</span>
+        <span onclick="window.location='/player-details?name={{ name }}'" style="cursor:pointer">{{ name }}</span>
         <span>{{ s[0] }}</span>
         <span>{{ s[1] }}</span>
         <span>{{ s[2] }}</span>
@@ -109,7 +109,9 @@
     <div class="partnership-row">
 
         <div class="partnership-left">
-            {{ p.striker }}
+            <div class="name" onclick="location.href='/player-details?name={{ p.striker }}'" style="cursor:pointer;">
+                {{ p.striker }}
+            </div>
         </div>
 
         <div class="partnership-center">
@@ -176,7 +178,9 @@
 
     <div class="table-row">
         <div>
-            <div class="name">{{ name }}</div>
+            <div class="name" onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">
+                {{ name }}
+            </div>
 
             {% set clean_name = name.split('(')[0].strip().lower() %}
             <div class="out">
@@ -221,7 +225,9 @@
     {% set s = parts[1].split(",") if parts|length > 1 else ["0","0","0","0","0"] %}
 
     <div class="table-row">
-        <span>{{ name }}</span>
+        <span onclick="location.href='/player-details?name={{ name }}'" style="cursor:pointer;">
+            {{ name }}
+        </span>
         <span>{{ s[0] }}</span>
         <span>{{ s[1] }}</span>
         <span>{{ s[2] }}</span>

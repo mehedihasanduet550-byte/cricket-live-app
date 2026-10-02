@@ -9,7 +9,7 @@
 <body>
 
 <div class="wicket-nav">
-    <a href="/live-match" class="wicket-back">←</a>
+    <a href="/live-match" class="wicket-back"></a>
     <span class="wicket-title">Fall of wicket</span>
 </div>
 
@@ -32,9 +32,15 @@
         </select>
     </div>
 
-    <label class="wicket-label">New batsman</label>
-    <div class="wicket-card">
-        <input list="playerList" id="newBatsman" placeholder="Player name">
+    <p id="inningsEndNote" style="display:none;font-weight:600;color:#b00020;margin:6px 2px;">
+        This wicket ends the innings/match -- no new batsman is needed, just confirm how it fell.
+    </p>
+
+    <div id="newBatsmanBlock">
+        <label class="wicket-label">New batsman</label>
+        <div class="wicket-card">
+            <input list="playerList" id="newBatsman" placeholder="Player name">
+        </div>
     </div>
 
     <datalist id="playerList">
@@ -55,11 +61,11 @@
 
 <script>
 
-// 🔥 AUTO LOAD CURRENT PLAYERS
+//  AUTO LOAD CURRENT PLAYERS
 window.onload = function(){
 
-    let striker =(localStorage.getItem("strikerName") || "").replace("★","").trim();
-    let nonStriker =(localStorage.getItem("nonStrikerName") || "").replace("★","").trim();
+    let striker =(localStorage.getItem("strikerName") || "").replace("","").trim();
+    let nonStriker =(localStorage.getItem("nonStrikerName") || "").replace("","").trim();
 
     const select = document.getElementById("outPlayer");
 
@@ -77,28 +83,40 @@ window.onload = function(){
         select.appendChild(op);
     }
 
-    // 🔥 default select striker
+    //  default select striker
     if(striker){
         select.value = striker;
     }
-    
+
+    // If this wicket ends the innings/match, no new batsman is coming in --
+    // hide that field instead of forcing the scorer to type a name for nobody.
+    if (localStorage.getItem("pendingAfterWicket")) {
+        document.getElementById("newBatsmanBlock").style.display = "none";
+        document.getElementById("inningsEndNote").style.display = "block";
+    }
+
 };
 function saveWicket(){
 
+    const pending = localStorage.getItem("pendingAfterWicket"); // "inningsBreak" | "matchResult" | null
     const player = document.getElementById("newBatsman").value;
     const type = document.getElementById("wicketType").value;
     const overEnded = localStorage.getItem("overEnded") || "false";
 
-    if(!player.trim()){
-        alert("Select batsman");
-        return;
-    }
+    // The wicket itself must always get saved -- a missing new-batsman name should never
+    // block that (this used to alert "Select batsman" and refuse to submit, which meant
+    // the very last wicket of an innings -- where there genuinely is no new batsman --
+    // could never be confirmed, so it never reached the batting summary or the bowler's
+    // figures). If nobody is typed in, we just go back to the live page afterward instead
+    // of choosing a new bowler, and that page decides what to show next.
 
-    // 🔥 SAVE TYPE (existing)
+    //  SAVE TYPE (existing)
     localStorage.setItem("wicketType", type);
 
     const outPlayer = document.getElementById("outPlayer").value;
 
+    // wait until the wicket is really saved before leaving the page, otherwise
+    // the browser can cancel the request mid-flight and the wicket never gets stored
     fetch("/save-wicket", {
         method: "POST",
         headers: {
@@ -106,11 +124,25 @@ function saveWicket(){
         },
         body: JSON.stringify({
             wicket_type: type,
-            out_player: outPlayer   // 🔥 FIXED
+            out_player: outPlayer   //  FIXED
         })
-    });
-
-    // 🔽 existing code (UNCHANGED)
+    }).catch(() => {}).then(() => {
+    // This wicket ended the innings or the match: no new batsman/bowler to pick,
+    // go back to the live page and let it re-open the innings-break or result screen.
+    if (pending) {
+        localStorage.removeItem("pendingAfterWicket");
+        window.location.href = "/live-match?" + pending + "=1";
+        return;
+    }
+    if (!player.trim()) {
+        // No new batsman entered and this wasn't flagged in advance as innings-ending --
+        // most likely it genuinely is innings-ending. Either way, don't block: the wicket
+        // is already saved above, so just go back and let the live page's own check
+        // (which re-reads the real score) decide whether to show the break/result screen.
+        window.location.href = "/live-match";
+        return;
+    }
+    //  existing code (UNCHANGED)
     if(overEnded === "true"){
         window.location.href = "/choose-bowler?new=" 
             + encodeURIComponent(player)
@@ -123,6 +155,7 @@ function saveWicket(){
             + "&type=" + encodeURIComponent(type)
             + "&overEnded=false";
     }
+    });
 }
 </script>
 

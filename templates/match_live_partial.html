@@ -63,8 +63,12 @@
         </div>
 
         <div class="live-row">
-            <span id="strikerName"style="color:rgb(14, 244, 106);">
-                {{ data.striker }} <span class="striker-mark">★</span>
+            
+            <span id="strikerName"
+                style="color:rgb(14, 244, 106);cursor:pointer;"
+                onclick="location.href='/player-details?name={{ data.striker }}'">
+                {{ data.striker }}
+                <span class="striker-mark">★</span>
             </span>
             <span id="sRuns">{{ data.s_runs }}</span>
             <span id="sBalls">{{ data.s_balls }}</span>
@@ -74,7 +78,11 @@
         </div>
 
         <div class="live-row">
-            <span id="nonStrikerName" style="color:rgb(14, 244, 106);">{{ data.non_striker }}</span>
+            <span id="nonStrikerName"
+                style="color:rgb(14, 244, 106);cursor:pointer;"
+                onclick="location.href='/player-details?name={{ data.non_striker }}'">
+                {{ data.non_striker }}
+            </span>
             <span id="nsRuns">{{ data.ns_runs }}</span>
             <span id="nsBalls">{{ data.ns_balls }}</span>
             <span id="ns4">{{ data.ns_4 }}</span>
@@ -92,7 +100,9 @@
         </div>
 
         <div class="live-row">
-            <span id="bowlerName" style="color:rgb(14, 244, 106);">{{ data.bowler }}</span>
+            <span id="bowlerName" style="color:rgb(14, 244, 106);cursor:pointer;" onclick="location.href='/player-details?name={{ data.bowler }}'">
+                {{ data.bowler }}
+            </span>
             <span id="bOver">
                 {{ (data.get('b_balls', 0)|int // 6) }}.{{ (data.get('b_balls', 0)|int % 6) }}
             </span>

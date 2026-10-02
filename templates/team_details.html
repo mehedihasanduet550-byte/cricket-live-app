@@ -45,11 +45,19 @@
 <div class="team-card row-card">
 
    
-    <div class="left player-info">
-        <img loading="lazy" src="{{ url_for('static', filename='images/players/' + p.name + '.webp') }}" 
+    <div class="left player-info"
+        onclick="location.href='/player-details?name={{ p.name }}'"style="cursor:pointer;">
+        {%- set photo = player_photo_url(p.name) %}
+        {%- if photo %}
+        <img loading="lazy" src="{{ photo }}"
         onerror="this.outerHTML='<div style=&quot;width:'+this.width+'px;height:'+this.height+'px;border-radius:50%;background:#59c34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;&quot;>{{ p.name[0] }}</div>'">
+        {%- else %}
+        <div style="width:80px;height:70px;border-radius:50%;background:#59c34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;">{{ p.name[0] }}</div>
+        {%- endif %}
+
         <span>{{ p.name }}</span>
-    </div>
+
+</div>
     
     <div class="right">
         {{ p.role }}
@@ -65,9 +73,15 @@
 {% for b in bench %}
 <div class="team-card row-card">
 
-    <div class="left player-info">
-        <img loading="lazy" src="{{ url_for('static', filename='images/players/' + b.name + '.webp') }}" 
+    <div class="left player-info"
+        onclick="location.href='/player-details?name={{ b.name }}'"style="cursor:pointer;">
+        {%- set photo = player_photo_url(b.name) %}
+        {%- if photo %}
+        <img loading="lazy" src="{{ photo }}"
         onerror="this.outerHTML='<div style=&quot;width:'+this.width+'px;height:'+this.height+'px;border-radius:50%;background:#59c34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;&quot;>{{ b.name[0] }}</div>'">
+        {%- else %}
+        <div style="width:80px;height:70px;border-radius:50%;background:#59c34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;">{{ b.name[0] }}</div>
+        {%- endif %}
         <span>{{ b.name }}</span>
     </div>
 
@@ -87,10 +101,20 @@
 {% for s in staff %}
 <div class="team-card row-card">
 
-    <div class="left player-info">
-        <img loading="lazy" src="{{ url_for('static', filename='images/players/' + s.name + '.webp') }}" 
+    <div class="left player-info"
+        onclick="location.href='/player-details?name={{ s.name }}'"
+        style="cursor:pointer;">
+
+        {%- set photo = player_photo_url(s.name) %}
+        {%- if photo %}
+        <img loading="lazy" src="{{ photo }}"
         onerror="this.outerHTML='<div style=&quot;width:'+this.width+'px;height:'+this.height+'px;border-radius:50%;background:#59c34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;&quot;>{{ s.name[0] }}</div>'">
+        {%- else %}
+        <div style="width:80px;height:70px;border-radius:50%;background:#59c34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;">{{ s.name[0] }}</div>
+        {%- endif %}
+
         <span>{{ s.name }}</span>
+
     </div>
 
     <div class="right">

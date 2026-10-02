@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Bowler</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<!-- 🔥 Navigation -->
+<div class="nav">
+    <a href="/live-match-2">Back</a>
+    <a href="/">Home</a>
+</div>
+
+<h2 class="fixture-title">🎯 Select New Bowler</h2>
+
+<div class="open-form">
+
+    <label>New Bowler</label>
+    <div class="open-card">
+        <input type="text" id="bowlerName" list="bowlingList" placeholder="Player name">
+    </div>
+
+    <!-- 🔥 DATALIST -->
+    <datalist id="bowlingList">
+        {% for p in bowlers %}
+            <option value="{{ p }}">
+        {% endfor %}
+    </datalist>
+
+    <button class="start-btn" onclick="saveBowler2()">
+        Done
+    </button>
+
+</div>
+
+<script src="{{ url_for('static', filename='css/js/script2.js') }}"></script>
+</body>
+</html>
