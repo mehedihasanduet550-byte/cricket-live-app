@@ -3053,28 +3053,6 @@ def save_opening():
     data["non_striker"] = non_striker
     data["bowler"] = bowler
 
-    #  "All out" needs to know how many players THIS batting team actually has for
-    #  THIS innings -- teams don't all field the same number, and it can even differ
-    #  match to match for the same team, so a single global number (advanced_settings)
-    #  is wrong more often than it's right. Work it out the same way the opening-players
-    #  page already does (same roster, same STF/BENCH/COACH exclusion) and store it on
-    #  the match itself.
-    try:
-        with open(f"data/teamlist/{data.get('batting')}.txt") as f:
-            eligible = []
-            for line in f:
-                parts = line.strip().split(",")
-                if not parts or not parts[0].strip():
-                    continue
-                roles = [p.strip().lower() for p in parts[1:]]
-                if "stf" in roles or "bench" in roles or "coach" in roles:
-                    continue
-                eligible.append(parts[0].strip())
-        if eligible:
-            data["players"] = str(len(eligible))
-    except Exception:
-        pass  # keep whatever data["players"] already was (e.g. the global default)
-
     # 🔥 NEW: INIT BATSMAN LOG (instant show)
     data["batsman_log"] = (
         f"{striker}=0,0,0,0,0.00|"
@@ -3107,23 +3085,6 @@ def save_opening_2():
     data["striker"] = striker
     data["non_striker"] = non_striker
     data["bowler"] = bowler
-
-    #  Same fix as save_opening() above, for match 2.
-    try:
-        with open(f"data/teamlist/{data.get('batting')}.txt") as f:
-            eligible = []
-            for line in f:
-                parts = line.strip().split(",")
-                if not parts or not parts[0].strip():
-                    continue
-                roles = [p.strip().lower() for p in parts[1:]]
-                if "stf" in roles or "bench" in roles or "coach" in roles:
-                    continue
-                eligible.append(parts[0].strip())
-        if eligible:
-            data["players"] = str(len(eligible))
-    except Exception:
-        pass
 
     data["batsman_log"] = (
         f"{striker}=0,0,0,0,0.00|"
@@ -3561,20 +3522,14 @@ def live_match():
    
       
 
-    #  save_opening() / save_opening_2() already worked out the REAL number of players
-    #  for whichever team is batting this innings and stored it on the match -- don't
-    #  overwrite that with the one global advanced-settings number on every single page
-    #  load, or "all out" stops matching the actual squad again. Only fall back to the
-    #  global setting if this match somehow has no value yet (e.g. it was created before
-    #  this existed).
-    if not data.get("players"):
-        try:
-            with open("data/advanced_settings.txt") as f:
-                for line in f:
-                    if line.startswith("players="):
-                        data["players"] = line.strip().split("=")[1]
-        except:
-            data["players"] = "11"
+    #  LOAD PLAYERS FROM ADVANCED SETTINGS
+    try:
+        with open("data/advanced_settings.txt") as f:
+            for line in f:
+                if line.startswith("players="):
+                    data["players"] = line.strip().split("=")[1]
+    except:
+        data["players"] = "11"
 
     
     # 🔥 6. render
@@ -3993,20 +3948,14 @@ def live_match_2():
    
       
 
-    #  save_opening() / save_opening_2() already worked out the REAL number of players
-    #  for whichever team is batting this innings and stored it on the match -- don't
-    #  overwrite that with the one global advanced-settings number on every single page
-    #  load, or "all out" stops matching the actual squad again. Only fall back to the
-    #  global setting if this match somehow has no value yet (e.g. it was created before
-    #  this existed).
-    if not data.get("players"):
-        try:
-            with open("data/advanced_settings.txt") as f:
-                for line in f:
-                    if line.startswith("players="):
-                        data["players"] = line.strip().split("=")[1]
-        except:
-            data["players"] = "11"
+    #  LOAD PLAYERS FROM ADVANCED SETTINGS
+    try:
+        with open("data/advanced_settings.txt") as f:
+            for line in f:
+                if line.startswith("players="):
+                    data["players"] = line.strip().split("=")[1]
+    except:
+        data["players"] = "11"
 
     
     # 🔥 6. render
