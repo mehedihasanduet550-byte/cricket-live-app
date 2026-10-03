@@ -1260,7 +1260,7 @@ def match_page():
                 d[key] = f"c b {bowler}"
 
             elif "run out" in t:
-                d[key] = "run out"
+                d[key] = "Run Out"
 
             elif t == "lbw":
                 d[key] = f"lbw b {bowler}"
@@ -1488,7 +1488,7 @@ def match_page_2():
                 d[key] = f"c b {bowler}"
 
             elif "run out" in t:
-                d[key] = "run out"
+                d[key] = "Run Out"
 
             elif t == "lbw":
                 d[key] = f"lbw b {bowler}"
