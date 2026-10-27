@@ -1605,6 +1605,125 @@ def match_live_data_2():
 
     return render_template("match_live_partial.html", data=data)
 
+def _norm_team(name):
+    import re
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def _read_kv(path, keys):
+    out = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "=" not in line:
+                    continue
+                k, v = line.strip().split("=", 1)
+                if k in keys:
+                    out[k] = v
+    except Exception:
+        pass
+    return out
+
+
+def get_auto_match_status():
+    """
+    Match file theke auto status ber kore.
+      completed -> data/all_match/*_2nd.txt te match_result likha ache
+      running   -> current_match.txt / current_match_2.txt a match ache
+                   kintu match_result nai
+    Return: (completed_count, running_count)  -- key = {team1, team2} pair
+    """
+    import os
+
+    completed = {}
+    running = {}
+
+    folder = "data/all_match"
+
+    try:
+        files = os.listdir(folder)
+    except Exception:
+        files = []
+
+    for fn in files:
+
+        if not fn.endswith("_2nd.txt"):
+            continue
+
+        d = _read_kv(
+            os.path.join(folder, fn),
+            {"host", "visitor", "match_result"}
+        )
+
+        if (
+            d.get("host")
+            and d.get("visitor")
+            and d.get("match_result", "").strip()
+        ):
+            pair = frozenset((_norm_team(d["host"]), _norm_team(d["visitor"])))
+            completed[pair] = completed.get(pair, 0) + 1
+
+    for path in ("data/current_match.txt", "data/current_match_2.txt"):
+
+        d = _read_kv(path, {"host", "visitor", "match_result"})
+
+        if (
+            d.get("host")
+            and d.get("visitor")
+            and not d.get("match_result", "").strip()
+        ):
+            pair = frozenset((_norm_team(d["host"]), _norm_team(d["visitor"])))
+            running[pair] = running.get(pair, 0) + 1
+
+    return completed, running
+
+
+def apply_auto_fixture_status(fixtures):
+    """
+    Fixture-er status auto set kore (fixture.txt a status likhte hobe na).
+    Ek-i duita team er ekadhik fixture thakle (jemon group + knockout)
+    shobcheye aager date er fixture age completed hoy.
+    """
+    from datetime import datetime
+
+    completed, running = get_auto_match_status()
+
+    if not completed and not running:
+        return fixtures
+
+    def when(fx):
+        try:
+            return datetime.strptime(
+                f"{fx['date'].title()} 2026 {fx['time']}",
+                "%d %b %Y %I:%M %p"
+            )
+        except Exception:
+            return datetime.max
+
+    order = sorted(range(len(fixtures)), key=lambda i: (when(fixtures[i]), i))
+
+    for i in order:
+
+        fx = fixtures[i]
+
+        pair = frozenset((_norm_team(fx["team1"]), _norm_team(fx["team2"])))
+
+        if len(pair) < 2:
+            continue
+
+        if completed.get(pair, 0) > 0:
+            completed[pair] -= 1
+            fx["status"] = "completed"
+            fx["completed"] = True
+
+        elif running.get(pair, 0) > 0:
+            running[pair] -= 1
+            fx["status"] = "running"
+            fx["completed"] = True
+
+    return fixtures
+
+
 def load_fixtures():
 
     fixtures = []
@@ -1702,7 +1821,7 @@ def load_fixtures():
     except:
         pass
 
-    return fixtures
+    return apply_auto_fixture_status(fixtures)
 
 def get_final_teams():
 
@@ -1827,7 +1946,7 @@ def fixture():
     )
     all_knockout_done = all(
 
-        m["completed"]
+        "completed" in m.get("status", "")
 
         for m in fixtures
 
@@ -2282,15 +2401,62 @@ def edit_group_team(index):
 @app.route("/fixture-manage")
 def fixture_manage():
 
-    fixtures = []
+    from datetime import datetime
+
+    # 🔥 file er asol LINE number (blank line soho) -- Edit / Delete eta diyei kaj kore,
+    #    tai list sort korleo kon line edit/delete hobe seta kokhono ulte jabe na
+    entries = []
 
     try:
         with open("data/fixture.txt", "r") as f:
-            fixtures = [l.strip() for l in f if l.strip()]
+
+            for idx, line in enumerate(f):
+
+                line = line.strip()
+
+                if line:
+                    entries.append((idx, line))
+
     except:
         pass
 
-    return render_template("fixture_manage.html", fixtures=fixtures)
+    # 🔥 load_fixtures() o blank line skip kore, tai entries er sathe 1:1 mile
+    try:
+        parsed = load_fixtures()
+    except Exception:
+        parsed = []
+
+    # 🔥 DATE + TIME onujayi ASCENDING (porse na hole sobar shesh e)
+    def when(k):
+
+        try:
+
+            fx = parsed[k]
+
+            return datetime.strptime(
+                f"{fx['date'].title()} 2026 {fx['time']}",
+                "%d %b %Y %I:%M %p"
+            )
+
+        except Exception:
+
+            return datetime.max
+
+    order = sorted(range(len(entries)), key=lambda k: (when(k), k))
+
+    fixtures = [entries[k][1] for k in order]
+    indexes = [entries[k][0] for k in order]
+    statuses = [
+        parsed[k].get("status", "") if k < len(parsed) else ""
+        for k in order
+    ]
+
+    return render_template(
+        "fixture_manage.html",
+        fixtures=fixtures,
+        indexes=indexes,
+        statuses=statuses
+    )
 
 @app.route("/add-fixture", methods=["POST"])
 def add_fixture():
@@ -7153,7 +7319,7 @@ def update_nrr_stats():
 
     try:
 
-        with open("data/advanced_setting.txt") as f:
+        with open("data/advanced_settings.txt") as f:
 
             for line in f:
 
@@ -7248,12 +7414,17 @@ def update_nrr_stats():
 
             overs = over + (ball / 6)
 
-            # 🔥 all out
+            # 🔥 ICC RULE: all out (players-1 wickets) -> full quota of overs
+            # counts as faced (by this team) and bowled (by the opponent)
             if wickets >= all_out_wickets:
 
                 try:
 
-                    overs = int(d.get("overs", "20"))
+                    overs = float(
+                        d.get("overs")
+                        or first.get("overs")
+                        or 20
+                    )
 
                 except:
 

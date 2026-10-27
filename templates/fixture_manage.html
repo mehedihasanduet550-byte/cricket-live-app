@@ -33,6 +33,7 @@
 {% for f in fixtures %}
 
 {% set done = 'completed' in f.lower() %}
+{% set st = statuses[loop.index0] if loop.index0 < statuses|length else '' %}
 
 <div class="team-card row-card player-row">
 
@@ -41,7 +42,7 @@
         {{ loop.index }}.
         {{ f.replace('|completed','') }}
 
-        {% if done %}
+        {% if done or st == 'completed' %}
         <span style="
             background:#00c853;
             color:white;
@@ -52,6 +53,17 @@
         ">
             COMPLETED
         </span>
+        {% elif st == 'running' %}
+        <span style="
+            background:#ff6d00;
+            color:white;
+            padding:2px 6px;
+            border-radius:6px;
+            font-size:10px;
+            margin-left:6px;
+        ">
+            RUNNING
+        </span>
         {% endif %}
 
     </div>
@@ -60,11 +72,11 @@
 
         <!-- EDIT -->
         <button type="button"
-        onclick="openEdit({{loop.index0}}, `{{f}}`)"
+        onclick="openEdit({{ indexes[loop.index0] }}, `{{f}}`)"
         class="edit-btn">Edit</button>
 
         <!-- DELETE -->
-        <a href="/delete-fixture/{{loop.index0}}"
+        <a href="/delete-fixture/{{ indexes[loop.index0] }}"
            onclick="return confirm('Delete fixture?')"
            class="delete-btn">Delete</a>
 
