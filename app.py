@@ -529,6 +529,11 @@ def append_history(line):
         with open("data/history.txt", "r") as f:
             old = f.read()
 
+    #  FIX: an identical consecutive state is a duplicate request, not a new ball
+    #  (it would need a second Undo click to get past).
+    if ("\n" + old).endswith("\n" + line + "\n"):
+        return
+
     old += line + "\n"
 
     with open(temp, "w") as f:
@@ -547,12 +552,79 @@ def append_history_2(line):
         with open("data/history_2.txt", "r") as f:
             old = f.read()
 
+    #  FIX: an identical consecutive state is a duplicate request, not a new ball
+    #  (it would need a second Undo click to get past).
+    if ("\n" + old).endswith("\n" + line + "\n"):
+        return
+
     old += line + "\n"
 
     with open(temp, "w") as f:
         f.write(old)
 
     os.replace(temp, "data/history_2.txt")
+
+
+#  FIX (undo after a wicket): update_score appends ONE history line per ball, but the
+#  wicket details (wickets_log, bowler's wicket count, the new batter walking in, the
+#  new bowler at an over change) are written AFTER that line, by save_wicket() and by
+#  /live-match?new=.. / ?bowler=.. -- so they never reached the history, and undoing the
+#  NEXT ball restored a state without them. These helpers overwrite the LAST history line
+#  with the finished state instead of appending a second line, so one ball = one line.
+def history_line(d):
+    parts = []
+    for k, v in d.items():
+        v = str(v).replace("\n", "").replace(";;", "")
+        parts.append(k + "=" + v)
+    return ";;".join(parts)
+
+def _replace_last_history(line, path, temp):
+    lines = []
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            lines = f.read().splitlines()
+    if lines:
+        lines[-1] = line
+    else:
+        lines = [line]
+    with open(temp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(temp, path)
+
+def replace_last_history(line):
+    _replace_last_history(line, "data/history.txt", "data/history_temp.txt")
+
+def replace_last_history_2(line):
+    _replace_last_history(line, "data/history_2.txt", "data/history_temp_2.txt")
+
+
+#  FIX: the "new batsman" and "new bowler" suggestion lists (fall-of-wicket / choose-bowler)
+#  used to list EVERYONE in the team file, including bench players and supporting staff
+#  (a coach even ended up bowling in a test match). Same rule as the opening-players page.
+def playing_names(team):
+    names = []
+    with open(f"data/teamlist/{team}.txt") as f:
+        for line in f:
+            parts = line.strip().split(",")
+            name = parts[0].strip()
+            if not name:
+                continue
+            roles = [p.strip().lower() for p in parts[1:]]
+            if "stf" in roles or "bench" in roles or "coach" in roles:
+                continue
+            names.append(name)
+    return names
+
+#  FIX: the chase "need" line used to read "need 0 runs in 1 balls" after the target was
+#  reached, and was missing until the first ball of the chase. One wording, used everywhere.
+def need_text_for(team, runs, balls):
+    runs = max(0, int(runs)); balls = max(0, int(balls))
+    if runs <= 0:
+        return f"{team} won"
+    if balls <= 0:
+        return "Overs finished"
+    return (f"{team} need {runs} run{'' if runs == 1 else 's'} "
+            f"in {balls} ball{'' if balls == 1 else 's'}")
 
 # =========================================================
 # 🔢 MATCH NUMBER SYSTEM
@@ -1869,7 +1941,7 @@ def get_final_teams():
 
                 obj = {
                     "team": team,
-                    "pts": won * 2,
+                    "pts": won * 2 + max(0, matches - won - lost),
                     "w": won,
                     "nrr": nrr
                 }
@@ -3560,6 +3632,15 @@ def live_match():
             data["s_6"] = "0"
             data["s_sr"] = "0"
 
+        elif str(wicket_type).strip().lower() == "retire":
+            #  FIX: whoever retired is replaced -- not automatically the striker.
+            #  (save_wicket stored who it was in last_wicket_player.)
+            retired = data.get("last_wicket_player")
+            if retired and retired == data.get("non_striker") and retired != data.get("striker"):
+                non_striker_new = new_player
+            else:
+                striker_new = new_player
+
         else:
             striker_new = new_player
 
@@ -3687,6 +3768,19 @@ def live_match():
     )
    
       
+
+    #  FIX (refresh replays the wicket): ?new=..&type=.. and ?bowler=.. CHANGE the match
+    #  state, and they used to stay in the address bar. A refresh / back / tab restore
+    #  then applied them again: the new batter's runs were reset to 0/0, the same player
+    #  could end up as both striker and non-striker, and over-end strike swapped again.
+    #  Now they are applied exactly once, written into this ball's history line (so undo
+    #  keeps them), and the browser is redirected to the clean URL.
+    if new_player or new_bowler:
+        try:
+            replace_last_history(history_line(data))
+        except Exception as e:
+            print("HISTORY UPDATE ERROR:", e)
+        return redirect("/live-match")
 
     #  LOAD PLAYERS FROM ADVANCED SETTINGS
     try:
@@ -3986,6 +4080,15 @@ def live_match_2():
             data["s_6"] = "0"
             data["s_sr"] = "0"
 
+        elif str(wicket_type).strip().lower() == "retire":
+            #  FIX: whoever retired is replaced -- not automatically the striker.
+            #  (save_wicket stored who it was in last_wicket_player.)
+            retired = data.get("last_wicket_player")
+            if retired and retired == data.get("non_striker") and retired != data.get("striker"):
+                non_striker_new = new_player
+            else:
+                striker_new = new_player
+
         else:
             striker_new = new_player
 
@@ -4114,6 +4217,19 @@ def live_match_2():
    
       
 
+    #  FIX (refresh replays the wicket): ?new=..&type=.. and ?bowler=.. CHANGE the match
+    #  state, and they used to stay in the address bar. A refresh / back / tab restore
+    #  then applied them again: the new batter's runs were reset to 0/0, the same player
+    #  could end up as both striker and non-striker, and over-end strike swapped again.
+    #  Now they are applied exactly once, written into this ball's history line (so undo
+    #  keeps them), and the browser is redirected to the clean URL.
+    if new_player or new_bowler:
+        try:
+            replace_last_history_2(history_line(data))
+        except Exception as e:
+            print("HISTORY UPDATE ERROR:", e)
+        return redirect("/live-match-2")
+
     #  LOAD PLAYERS FROM ADVANCED SETTINGS
     try:
         with open("data/advanced_settings.txt") as f:
@@ -4189,9 +4305,19 @@ def update_score():
     # 🔥 FINISHED OVER
     if data.get("finished_over"):
 
+        #  FIX: the same finished over posted twice (network retry / double tap) was
+        #  appended twice. After over N is finished the log must hold N entries, so
+        #  if entry N already exists, overwrite it instead of appending another.
         old = match.get("over_log", "")
-
-        if old:
+        entries = old.split("|") if old else []
+        try:
+            overs_done = int(match.get("over", 0))
+        except ValueError:
+            overs_done = 0
+        if overs_done > 0 and len(entries) >= overs_done:
+            entries[overs_done - 1] = data.get("finished_over")
+            match["over_log"] = "|".join(entries)
+        elif old:
             match["over_log"] = old + "|" + data.get("finished_over")
         else:
             match["over_log"] = data.get("finished_over")
@@ -4391,7 +4517,7 @@ def update_score():
 
         batting_team = match.get("batting", "")
 
-        match["need_text"] = f"{batting_team} need {runs_needed} runs in {balls_left} balls"
+        match["need_text"] = need_text_for(batting_team, runs_needed, balls_left)
 
     # 🔥 MATCH FILE SAVE
     # 🔥 MATCH FILE SAVE
@@ -4553,9 +4679,19 @@ def update_score_2():
     # 🔥 FINISHED OVER
     if data.get("finished_over"):
 
+        #  FIX: the same finished over posted twice (network retry / double tap) was
+        #  appended twice. After over N is finished the log must hold N entries, so
+        #  if entry N already exists, overwrite it instead of appending another.
         old = match.get("over_log", "")
-
-        if old:
+        entries = old.split("|") if old else []
+        try:
+            overs_done = int(match.get("over", 0))
+        except ValueError:
+            overs_done = 0
+        if overs_done > 0 and len(entries) >= overs_done:
+            entries[overs_done - 1] = data.get("finished_over")
+            match["over_log"] = "|".join(entries)
+        elif old:
             match["over_log"] = old + "|" + data.get("finished_over")
         else:
             match["over_log"] = data.get("finished_over")
@@ -4755,7 +4891,7 @@ def update_score_2():
 
         batting_team = match.get("batting", "")
 
-        match["need_text"] = f"{batting_team} need {runs_needed} runs in {balls_left} balls"
+        match["need_text"] = need_text_for(batting_team, runs_needed, balls_left)
 
     # 🔥 MATCH FILE SAVE
     # 🔥 MATCH FILE SAVE
@@ -4910,8 +5046,7 @@ def fall_wicket():
 
     batting = data["batting"]
 
-    with open(f"data/teamlist/{batting}.txt") as f:
-        players = [line.strip().split(",")[0] for line in f]
+    players = playing_names(batting)
 
     return render_template("fall_of_wicket.html", players=players)
 @app.route("/fall-of-wicket-2")
@@ -4926,8 +5061,7 @@ def fall_wicket_2():
 
     batting = data["batting"]
 
-    with open(f"data/teamlist/{batting}.txt") as f:
-        players = [line.strip().split(",")[0] for line in f]
+    players = playing_names(batting)
 
     return render_template(
         "fall_of_wicket_2.html",
@@ -4950,8 +5084,7 @@ def choose_bowler():
         return "Bowling team missing"
 
     # 🔥 SAME AS opening page
-    with open(f"data/teamlist/{bowling_team}.txt") as f:
-        bowlers = [line.strip().split(",")[0] for line in f]
+    bowlers = playing_names(bowling_team)
 
     return render_template("choose_bowler.html", bowlers=bowlers)
 
@@ -4971,8 +5104,7 @@ def choose_bowler_2():
         return "Bowling team missing"
 
     # 🔥 SAME AS opening page
-    with open(f"data/teamlist/{bowling_team}.txt") as f:
-        bowlers = [line.strip().split(",")[0] for line in f]
+    bowlers = playing_names(bowling_team)
 
     return render_template("choose_bowler_2.html", bowlers=bowlers)
 
@@ -4989,6 +5121,19 @@ def undo():
             lines = f.readlines()
 
         if len(lines) < 2:
+            return redirect("/live-match")
+
+        #  FIX: history.txt is one file for both innings, so undoing the very first
+        #  action of the 2nd innings used to restore the END of the 1st innings
+        #  (innings=1) and orphan the 2nd-innings file. Refuse to cross that boundary.
+        try:
+            prev_state = dict(i.split("=", 1) for i in lines[-2].strip().split(";;") if "=" in i)
+            with open("data/current_match.txt") as cf:
+                cur_state = dict(l.strip().split("=", 1) for l in cf if "=" in l)
+        except Exception:
+            prev_state, cur_state = {}, {}
+        if (prev_state.get("innings") and cur_state.get("innings")
+                and prev_state["innings"] != cur_state["innings"]):
             return redirect("/live-match")
 
         # 🔥 REMOVE LAST STATE
@@ -5056,6 +5201,19 @@ def undo_2():
         if len(lines) < 2:
             return redirect("/live-match-2")
 
+        #  FIX: history.txt is one file for both innings, so undoing the very first
+        #  action of the 2nd innings used to restore the END of the 1st innings
+        #  (innings=1) and orphan the 2nd-innings file. Refuse to cross that boundary.
+        try:
+            prev_state = dict(i.split("=", 1) for i in lines[-2].strip().split(";;") if "=" in i)
+            with open("data/current_match_2.txt") as cf:
+                cur_state = dict(l.strip().split("=", 1) for l in cf if "=" in l)
+        except Exception:
+            prev_state, cur_state = {}, {}
+        if (prev_state.get("innings") and cur_state.get("innings")
+                and prev_state["innings"] != cur_state["innings"]):
+            return redirect("/live-match-2")
+
         # 🔥 REMOVE LAST STATE
         lines = lines[:-1]
 
@@ -5118,6 +5276,18 @@ def start_second():
                 k, v = line.strip().split("=", 1)
                 data[k] = v
 
+    #  FIX: this is a GET route that swaps the teams and rewrites the 1st-innings file.
+    #  A double-click on OK, a back/forward, or a retried request used to run it a 2nd
+    #  time on the already-reset 2nd-innings state: target became 1, teams swapped back
+    #  and the 1st-innings file was overwritten with a 0-score 2nd-innings state.
+    if str(data.get("innings", "1")).strip() == "2":
+        try:
+            started = (int(data.get("score", 0) or 0) > 0 or int(data.get("over", 0) or 0) > 0
+                       or int(data.get("ball", 0) or 0) > 0)
+        except ValueError:
+            started = False
+        return redirect("/live-match" if started else "/opening-players")
+
     match_file = data.get("first_match_file")
 
     # 🔥 SAVE 1ST INNINGS
@@ -5171,6 +5341,15 @@ def start_second():
 
     # 🔥 SECOND INNINGS
     data["innings"] = "2"
+
+    #  the chase line is correct from ball 0, not only after the first ball
+    try:
+        need_balls = int(data.get("overs", 0) or 0) * 6
+        data["need_runs"] = data["target"]
+        data["need_balls"] = str(need_balls)
+        data["need_text"] = need_text_for(data.get("batting", ""), int(data["target"]), need_balls)
+    except (ValueError, KeyError):
+        pass
 
     # 🔥 SAVE SECOND INNINGS FILE
     safe_write(data["second_match_file"], data)
@@ -5192,6 +5371,18 @@ def start_second_2():
                 k, v = line.strip().split("=", 1)
                 data[k] = v
 
+    #  FIX: this is a GET route that swaps the teams and rewrites the 1st-innings file.
+    #  A double-click on OK, a back/forward, or a retried request used to run it a 2nd
+    #  time on the already-reset 2nd-innings state: target became 1, teams swapped back
+    #  and the 1st-innings file was overwritten with a 0-score 2nd-innings state.
+    if str(data.get("innings", "1")).strip() == "2":
+        try:
+            started = (int(data.get("score", 0) or 0) > 0 or int(data.get("over", 0) or 0) > 0
+                       or int(data.get("ball", 0) or 0) > 0)
+        except ValueError:
+            started = False
+        return redirect("/live-match-2" if started else "/opening-players-2")
+
     match_file = data.get("first_match_file")
 
     # 🔥 SAVE 1ST INNINGS
@@ -5245,6 +5436,15 @@ def start_second_2():
 
     # 🔥 SECOND INNINGS
     data["innings"] = "2"
+
+    #  the chase line is correct from ball 0, not only after the first ball
+    try:
+        need_balls = int(data.get("overs", 0) or 0) * 6
+        data["need_runs"] = data["target"]
+        data["need_balls"] = str(need_balls)
+        data["need_text"] = need_text_for(data.get("batting", ""), int(data["target"]), need_balls)
+    except (ValueError, KeyError):
+        pass
 
     # 🔥 SAVE SECOND INNINGS FILE
     safe_write(data["second_match_file"], data)
@@ -5693,7 +5893,7 @@ def save_wicket():
         #  only happen when the browser navigated on to /live-match with a new batsman,
         #  which never happened for the last wicket of an innings/match -- so that wicket
         #  never reached the bowler's figures.
-        if not wicket_type.startswith("Run out") and wicket_type != "retire":
+        if not wicket_type.lower().startswith("run out") and wicket_type.lower() != "retire":
             bw = match.get("b_wickets")
             prev_bw = int(bw) if str(bw).isdigit() else 0
             match["b_wickets"] = str(prev_bw + 1)
@@ -5738,7 +5938,9 @@ def save_wicket():
             fow = json.loads(match.get("fall_of_wickets", "[]"))
         except Exception:
             fow = []
-        if fow:
+        #  FIX: a retirement is not a wicket and adds no Fall-of-Wicket entry, so it must not
+        #  rename the previous (real) wicket's entry.
+        if fow and wicket_type.lower() != "retire":
             fow[-1]["player"] = out_player
             match["fall_of_wickets"] = json.dumps(fow)
 
@@ -5752,6 +5954,12 @@ def save_wicket():
 
     if match_file:
         safe_write(match_file, match)
+
+    #  FIX (undo): the wicket is now part of this ball's history line.
+    try:
+        replace_last_history(history_line(match))
+    except Exception as e:
+        print("HISTORY UPDATE ERROR:", e)
 
     return {"status": "ok"}
 
@@ -5803,7 +6011,7 @@ def save_wicket_2():
         #  only happen when the browser navigated on to /live-match with a new batsman,
         #  which never happened for the last wicket of an innings/match -- so that wicket
         #  never reached the bowler's figures.
-        if not wicket_type.startswith("Run out") and wicket_type != "retire":
+        if not wicket_type.lower().startswith("run out") and wicket_type.lower() != "retire":
             bw = match.get("b_wickets")
             prev_bw = int(bw) if str(bw).isdigit() else 0
             match["b_wickets"] = str(prev_bw + 1)
@@ -5848,7 +6056,9 @@ def save_wicket_2():
             fow = json.loads(match.get("fall_of_wickets", "[]"))
         except Exception:
             fow = []
-        if fow:
+        #  FIX: a retirement is not a wicket and adds no Fall-of-Wicket entry, so it must not
+        #  rename the previous (real) wicket's entry.
+        if fow and wicket_type.lower() != "retire":
             fow[-1]["player"] = out_player
             match["fall_of_wickets"] = json.dumps(fow)
 
@@ -5862,6 +6072,12 @@ def save_wicket_2():
 
     if match_file:
         safe_write(match_file, match)
+
+    #  FIX (undo): the wicket is now part of this ball's history line.
+    try:
+        replace_last_history_2(history_line(match))
+    except Exception as e:
+        print("HISTORY UPDATE ERROR:", e)
 
     return {"status": "ok"}
 
@@ -7209,13 +7425,16 @@ def points():
                             nrr_value = (runs_scored / overs_faced) - (runs_conceded / overs_bowled)
 
                     # 🔥 build data
+                    #  FIX: a tie / no-result match (played but neither won nor lost) is worth
+                    #  1 point each; it used to give 0. Shown in the NR column.
+                    tied = max(0, matches - won - lost)
                     data = {
                         "team": team,
                         "p": matches,
                         "w": won,
                         "l": lost,
-                        "nr": 0,
-                        "pts": won * 2,
+                        "nr": tied,
+                        "pts": won * 2 + tied,
                         "nrr": f"{nrr_value:+.2f}"
                     }
 
@@ -7398,6 +7617,12 @@ def update_nrr_stats():
         if not team1 or not team2:
             continue
 
+        #  FIX: only count matches that have a result. Before, a match in progress (or a
+        #  1st innings with no chase yet) was counted with its partial runs/overs, so
+        #  NRR on /points changed ball by ball while a match was live.
+        if not second.get("match_result", "").strip():
+            continue
+
         # =========================
         # 🔥 SCORE DATA
         # =========================
@@ -7468,6 +7693,16 @@ def update_nrr_stats():
     # =========================
     # 🔥 SAVE
     # =========================
+
+    # teams with no finished match must not keep a stale NRR file from an earlier run
+    try:
+        for fn in os.listdir(nrr_folder):
+            if fn.endswith(".txt") and fn[:-4] not in stats:
+                with open(os.path.join(nrr_folder, fn), "w") as f:
+                    f.write("total_runs_scored=0\ntotal_overs_faced=0\n"
+                            "total_runs_conceded=0\ntotal_overs_bowled=0\n")
+    except Exception:
+        pass
 
     for team, s in stats.items():
 

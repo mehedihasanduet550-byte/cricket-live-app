@@ -34,6 +34,83 @@ def locked(match_no):
         return wrapper
     return deco
 
+
+#  Player photos are looked up everywhere else in the site purely by filename
+#  convention ("<player name>.webp"), with nothing checking whether that file is
+#  actually there. Two separate problems that caused: (1) a deleted photo kept showing
+#  up on other pages, because the browser had the old image cached and nothing ever
+#  told it to ask the server again; (2) replacing a photo (same player, new picture,
+#  same filename) needed a hard refresh to show up for the same reason. This Jinja
+#  helper fixes both: it builds the photo URL with a "?v=<file's last-modified time>"
+#  tag, so the URL itself changes whenever the underlying file actually changes,
+#  forcing browsers to fetch the new one automatically -- no hard refresh needed. If
+#  the file doesn't exist at all (deleted, never uploaded), it returns None so the
+#  template can skip the <img> tag entirely instead of pointing at a dead/cached file.
+def player_photo_url(name):
+    if not name:
+        return None
+    path = os.path.join("static", "images", "players", f"{name}.webp")
+    try:
+        v = int(os.path.getmtime(path))
+    except OSError:
+        return None
+    from urllib.parse import quote
+    return f"/static/images/players/{quote(name)}.webp?v={v}"
+
+app.jinja_env.globals["player_photo_url"] = player_photo_url
+
+#  Match PDF downloads were slow to even START because download_match_pdf() launched a
+#  brand new headless Chromium browser from scratch on every single click -- that alone
+#  typically costs a second or more, on top of actually rendering the page. Keep ONE
+#  Chromium instance running for the life of the server instead, and just open/close a
+#  lightweight page in it per download. _PDF_LOCK serialises use of it (Playwright's
+#  sync API isn't safe to drive from two threads at once); it does not block anything
+#  else in the app.
+_PDF_LOCK = threading.Lock()
+_pdf_playwright = None
+_pdf_browser = None
+
+def _get_pdf_browser():
+    global _pdf_playwright, _pdf_browser
+    if _pdf_browser is None:
+        _pdf_playwright = sync_playwright().start()
+        _pdf_browser = _pdf_playwright.chromium.launch(headless=True)
+    return _pdf_browser
+
+def render_match_pdf(url):
+    """Render `url` to PDF bytes using the shared browser, restarting it once if it
+    has died (e.g. after a crash) rather than failing the whole download."""
+    global _pdf_browser
+    with _PDF_LOCK:
+        for attempt in (1, 2):
+            try:
+                browser = _get_pdf_browser()
+                page = browser.new_page(
+                    viewport={"width": 1280, "height": 1800},
+                    device_scale_factor=1
+                )
+                try:
+                    page.goto(url, wait_until="load")
+                    page.wait_for_timeout(300)
+                    return page.pdf(
+                        format="A4",
+                        print_background=True,
+                        prefer_css_page_size=True,
+                        margin={"top": "8mm", "right": "8mm", "bottom": "8mm", "left": "8mm"}
+                    )
+                finally:
+                    page.close()
+            except Exception:
+                if attempt == 2:
+                    raise
+                # the shared browser may have crashed/closed -- throw it away and
+                # retry exactly once with a freshly launched one
+                try:
+                    _pdf_browser.close()
+                except Exception:
+                    pass
+                _pdf_browser = None
+
 app.config['SEND_FILE_MAX_AGE_DEFAULT']=31536000
 from flask_compress import Compress
 Compress(app)
@@ -87,7 +164,13 @@ def get_db():
 
     return conn
 
-def save_as_webp(file, folder):
+def save_as_webp(file, folder, max_dim=None):
+    #  max_dim: if given, shrink the image so neither side exceeds this many pixels
+    #  (aspect ratio kept), before saving. Uploads straight from a phone camera can be
+    #  several thousand pixels wide; saved at full size, every place that embeds many
+    #  of these at once (the match scorecard PDF especially) ends up huge even though
+    #  the photo is only ever shown as a small circle avatar. This only resizes when a
+    #  caller asks for it, so banners/news images that DO need to stay large are unaffected.
 
     img = Image.open(file)
 
@@ -96,6 +179,9 @@ def save_as_webp(file, folder):
         img = img.convert("RGBA")
     else:
         img = img.convert("RGB")
+
+    if max_dim:
+        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
 
 
     filename = os.path.splitext(
@@ -467,6 +553,39 @@ def append_history_2(line):
         f.write(old)
 
     os.replace(temp, "data/history_2.txt")
+
+
+#  FIX (undo after a wicket): update_score appends ONE history line per ball, but the
+#  wicket details (wickets_log, bowler's wicket count, the new batter walking in, the
+#  new bowler at an over change) are written AFTER that line, by save_wicket() and by
+#  /live-match?new=.. / ?bowler=.. -- so they never reached the history, and undoing the
+#  NEXT ball restored a state without them. These helpers overwrite the LAST history line
+#  with the finished state instead of appending a second line, so one ball = one line.
+def history_line(d):
+    parts = []
+    for k, v in d.items():
+        v = str(v).replace("\n", "").replace(";;", "")
+        parts.append(k + "=" + v)
+    return ";;".join(parts)
+
+def _replace_last_history(line, path, temp):
+    lines = []
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            lines = f.read().splitlines()
+    if lines:
+        lines[-1] = line
+    else:
+        lines = [line]
+    with open(temp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(temp, path)
+
+def replace_last_history(line):
+    _replace_last_history(line, "data/history.txt", "data/history_temp.txt")
+
+def replace_last_history_2(line):
+    _replace_last_history(line, "data/history_2.txt", "data/history_temp_2.txt")
 
 # =========================================================
 # 🔢 MATCH NUMBER SYSTEM
@@ -1174,7 +1293,7 @@ def match_page():
                 d[key] = f"c b {bowler}"
 
             elif "run out" in t:
-                d[key] = "Run out"
+                d[key] = "Run Out"
 
             elif t == "lbw":
                 d[key] = f"lbw b {bowler}"
@@ -1402,7 +1521,7 @@ def match_page_2():
                 d[key] = f"c b {bowler}"
 
             elif "run out" in t:
-                d[key] = "Run out"
+                d[key] = "Run Out"
 
             elif t == "lbw":
                 d[key] = f"lbw b {bowler}"
@@ -1519,6 +1638,125 @@ def match_live_data_2():
 
     return render_template("match_live_partial.html", data=data)
 
+def _norm_team(name):
+    import re
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def _read_kv(path, keys):
+    out = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "=" not in line:
+                    continue
+                k, v = line.strip().split("=", 1)
+                if k in keys:
+                    out[k] = v
+    except Exception:
+        pass
+    return out
+
+
+def get_auto_match_status():
+    """
+    Match file theke auto status ber kore.
+      completed -> data/all_match/*_2nd.txt te match_result likha ache
+      running   -> current_match.txt / current_match_2.txt a match ache
+                   kintu match_result nai
+    Return: (completed_count, running_count)  -- key = {team1, team2} pair
+    """
+    import os
+
+    completed = {}
+    running = {}
+
+    folder = "data/all_match"
+
+    try:
+        files = os.listdir(folder)
+    except Exception:
+        files = []
+
+    for fn in files:
+
+        if not fn.endswith("_2nd.txt"):
+            continue
+
+        d = _read_kv(
+            os.path.join(folder, fn),
+            {"host", "visitor", "match_result"}
+        )
+
+        if (
+            d.get("host")
+            and d.get("visitor")
+            and d.get("match_result", "").strip()
+        ):
+            pair = frozenset((_norm_team(d["host"]), _norm_team(d["visitor"])))
+            completed[pair] = completed.get(pair, 0) + 1
+
+    for path in ("data/current_match.txt", "data/current_match_2.txt"):
+
+        d = _read_kv(path, {"host", "visitor", "match_result"})
+
+        if (
+            d.get("host")
+            and d.get("visitor")
+            and not d.get("match_result", "").strip()
+        ):
+            pair = frozenset((_norm_team(d["host"]), _norm_team(d["visitor"])))
+            running[pair] = running.get(pair, 0) + 1
+
+    return completed, running
+
+
+def apply_auto_fixture_status(fixtures):
+    """
+    Fixture-er status auto set kore (fixture.txt a status likhte hobe na).
+    Ek-i duita team er ekadhik fixture thakle (jemon group + knockout)
+    shobcheye aager date er fixture age completed hoy.
+    """
+    from datetime import datetime
+
+    completed, running = get_auto_match_status()
+
+    if not completed and not running:
+        return fixtures
+
+    def when(fx):
+        try:
+            return datetime.strptime(
+                f"{fx['date'].title()} 2026 {fx['time']}",
+                "%d %b %Y %I:%M %p"
+            )
+        except Exception:
+            return datetime.max
+
+    order = sorted(range(len(fixtures)), key=lambda i: (when(fixtures[i]), i))
+
+    for i in order:
+
+        fx = fixtures[i]
+
+        pair = frozenset((_norm_team(fx["team1"]), _norm_team(fx["team2"])))
+
+        if len(pair) < 2:
+            continue
+
+        if completed.get(pair, 0) > 0:
+            completed[pair] -= 1
+            fx["status"] = "completed"
+            fx["completed"] = True
+
+        elif running.get(pair, 0) > 0:
+            running[pair] -= 1
+            fx["status"] = "running"
+            fx["completed"] = True
+
+    return fixtures
+
+
 def load_fixtures():
 
     fixtures = []
@@ -1616,7 +1854,7 @@ def load_fixtures():
     except:
         pass
 
-    return fixtures
+    return apply_auto_fixture_status(fixtures)
 
 def get_final_teams():
 
@@ -1664,7 +1902,7 @@ def get_final_teams():
 
                 obj = {
                     "team": team,
-                    "pts": won * 2,
+                    "pts": won * 2 + max(0, matches - won - lost),
                     "w": won,
                     "nrr": nrr
                 }
@@ -1741,7 +1979,7 @@ def fixture():
     )
     all_knockout_done = all(
 
-        m["completed"]
+        "completed" in m.get("status", "")
 
         for m in fixtures
 
@@ -1887,9 +2125,13 @@ def upload_player_image():
 
             filename = file.filename
 
+            #  Player photos only ever show up as small circle avatars (~120px at
+            #  most, including the match PDF), so there's no reason to keep them at
+            #  full camera resolution -- that's most of what was making the PDF big.
             save_as_webp(
             file,
-            app.config["UPLOAD_FOLDER"]
+            app.config["UPLOAD_FOLDER"],
+            max_dim=500
             )
 
     return redirect("/player-images")
@@ -1902,9 +2144,19 @@ def rename_image():
     folder = app.config["UPLOAD_FOLDER"]
 
     old_path = os.path.join(folder, old_name)
+
+    #  Every player photo MUST end in .webp -- that's the only extension the rest of
+    #  the site (team page, match scorecard, player page) ever looks for, built as
+    #  "<player name>.webp" with nothing checking whether the file is actually there
+    #  first. The rename prompt just pre-fills the OLD filename (which already ends in
+    #  .webp from the upload step); if the extension got dropped or changed while typing
+    #  a new name, the rename itself would still "succeed" on disk, but the photo would
+    #  silently stop showing up everywhere else in the site. So: always force .webp on
+    #  the new name, no matter what was actually typed.
+    new_base = os.path.splitext(new_name)[0]
+    new_name = new_base + ".webp"
     new_path = os.path.join(folder, new_name)
 
-    # extension same rakha better
     if os.path.exists(old_path):
         os.rename(old_path, new_path)
 
@@ -2076,9 +2328,12 @@ def upload_team_logo():
             name, ext = os.path.splitext(filename)
             filename = f"{name}_{int(time.time())}{ext}"
 
+        #  Same reasoning as player photos -- a team logo is only ever shown as a
+        #  small badge, never at camera/original resolution.
         save_as_webp(
         file,
-        "static/images/teams"
+        "static/images/teams",
+        max_dim=500
         )
 
     return redirect("/team-logos")
@@ -2179,15 +2434,62 @@ def edit_group_team(index):
 @app.route("/fixture-manage")
 def fixture_manage():
 
-    fixtures = []
+    from datetime import datetime
+
+    # 🔥 file er asol LINE number (blank line soho) -- Edit / Delete eta diyei kaj kore,
+    #    tai list sort korleo kon line edit/delete hobe seta kokhono ulte jabe na
+    entries = []
 
     try:
         with open("data/fixture.txt", "r") as f:
-            fixtures = [l.strip() for l in f if l.strip()]
+
+            for idx, line in enumerate(f):
+
+                line = line.strip()
+
+                if line:
+                    entries.append((idx, line))
+
     except:
         pass
 
-    return render_template("fixture_manage.html", fixtures=fixtures)
+    # 🔥 load_fixtures() o blank line skip kore, tai entries er sathe 1:1 mile
+    try:
+        parsed = load_fixtures()
+    except Exception:
+        parsed = []
+
+    # 🔥 DATE + TIME onujayi ASCENDING (porse na hole sobar shesh e)
+    def when(k):
+
+        try:
+
+            fx = parsed[k]
+
+            return datetime.strptime(
+                f"{fx['date'].title()} 2026 {fx['time']}",
+                "%d %b %Y %I:%M %p"
+            )
+
+        except Exception:
+
+            return datetime.max
+
+    order = sorted(range(len(entries)), key=lambda k: (when(k), k))
+
+    fixtures = [entries[k][1] for k in order]
+    indexes = [entries[k][0] for k in order]
+    statuses = [
+        parsed[k].get("status", "") if k < len(parsed) else ""
+        for k in order
+    ]
+
+    return render_template(
+        "fixture_manage.html",
+        fixtures=fixtures,
+        indexes=indexes,
+        statuses=statuses
+    )
 
 @app.route("/add-fixture", methods=["POST"])
 def add_fixture():
@@ -3291,6 +3593,15 @@ def live_match():
             data["s_6"] = "0"
             data["s_sr"] = "0"
 
+        elif str(wicket_type).strip().lower() == "retire":
+            #  FIX: whoever retired is replaced -- not automatically the striker.
+            #  (save_wicket stored who it was in last_wicket_player.)
+            retired = data.get("last_wicket_player")
+            if retired and retired == data.get("non_striker") and retired != data.get("striker"):
+                non_striker_new = new_player
+            else:
+                striker_new = new_player
+
         else:
             striker_new = new_player
 
@@ -3419,7 +3730,20 @@ def live_match():
    
       
 
-    # 🔥 LOAD PLAYERS FROM ADVANCED SETTINGS
+    #  FIX (refresh replays the wicket): ?new=..&type=.. and ?bowler=.. CHANGE the match
+    #  state, and they used to stay in the address bar. A refresh / back / tab restore
+    #  then applied them again: the new batter's runs were reset to 0/0, the same player
+    #  could end up as both striker and non-striker, and over-end strike swapped again.
+    #  Now they are applied exactly once, written into this ball's history line (so undo
+    #  keeps them), and the browser is redirected to the clean URL.
+    if new_player or new_bowler:
+        try:
+            replace_last_history(history_line(data))
+        except Exception as e:
+            print("HISTORY UPDATE ERROR:", e)
+        return redirect("/live-match")
+
+    #  LOAD PLAYERS FROM ADVANCED SETTINGS
     try:
         with open("data/advanced_settings.txt") as f:
             for line in f:
@@ -3717,6 +4041,15 @@ def live_match_2():
             data["s_6"] = "0"
             data["s_sr"] = "0"
 
+        elif str(wicket_type).strip().lower() == "retire":
+            #  FIX: whoever retired is replaced -- not automatically the striker.
+            #  (save_wicket stored who it was in last_wicket_player.)
+            retired = data.get("last_wicket_player")
+            if retired and retired == data.get("non_striker") and retired != data.get("striker"):
+                non_striker_new = new_player
+            else:
+                striker_new = new_player
+
         else:
             striker_new = new_player
 
@@ -3845,7 +4178,20 @@ def live_match_2():
    
       
 
-    # 🔥 LOAD PLAYERS FROM ADVANCED SETTINGS
+    #  FIX (refresh replays the wicket): ?new=..&type=.. and ?bowler=.. CHANGE the match
+    #  state, and they used to stay in the address bar. A refresh / back / tab restore
+    #  then applied them again: the new batter's runs were reset to 0/0, the same player
+    #  could end up as both striker and non-striker, and over-end strike swapped again.
+    #  Now they are applied exactly once, written into this ball's history line (so undo
+    #  keeps them), and the browser is redirected to the clean URL.
+    if new_player or new_bowler:
+        try:
+            replace_last_history_2(history_line(data))
+        except Exception as e:
+            print("HISTORY UPDATE ERROR:", e)
+        return redirect("/live-match-2")
+
+    #  LOAD PLAYERS FROM ADVANCED SETTINGS
     try:
         with open("data/advanced_settings.txt") as f:
             for line in f:
@@ -3904,7 +4250,14 @@ def update_score():
     match["b_balls"] = str(data.get("b_balls", 0))
     match["b_maiden"] = str(data.get("b_maiden", 0))
     match["b_er"] = str(data.get("b_er", 0))
-    match["b_wickets"] = str(data.get("b_wickets", match.get("b_wickets", 0)))
+    # b_wickets is authoritative on the SERVER now (incremented once in save_wicket()
+    # when a dismissal is confirmed, reset to 0 when a new bowler is chosen). The browser
+    # only reloads this number when the page loads and never increments it itself, so
+    # trusting the value it sends here was overwriting every wicket straight back to the
+    # pre-wicket count on the very next ball -- which is why the bowler's wicket column
+    # kept losing non-run-out dismissals. Just keep whatever the server already has.
+    if "b_wickets" not in match:
+        match["b_wickets"] = "0"
 
     # 🔥 THIS OVER
     if data.get("this_over") is not None:
@@ -4261,7 +4614,14 @@ def update_score_2():
     match["b_balls"] = str(data.get("b_balls", 0))
     match["b_maiden"] = str(data.get("b_maiden", 0))
     match["b_er"] = str(data.get("b_er", 0))
-    match["b_wickets"] = str(data.get("b_wickets", match.get("b_wickets", 0)))
+    # b_wickets is authoritative on the SERVER now (incremented once in save_wicket()
+    # when a dismissal is confirmed, reset to 0 when a new bowler is chosen). The browser
+    # only reloads this number when the page loads and never increments it itself, so
+    # trusting the value it sends here was overwriting every wicket straight back to the
+    # pre-wicket count on the very next ball -- which is why the bowler's wicket column
+    # kept losing non-run-out dismissals. Just keep whatever the server already has.
+    if "b_wickets" not in match:
+        match["b_wickets"] = "0"
 
     # 🔥 THIS OVER
     if data.get("this_over") is not None:
@@ -4835,6 +5195,18 @@ def start_second():
                 k, v = line.strip().split("=", 1)
                 data[k] = v
 
+    #  FIX: this is a GET route that swaps the teams and rewrites the 1st-innings file.
+    #  A double-click on OK, a back/forward, or a retried request used to run it a 2nd
+    #  time on the already-reset 2nd-innings state: target became 1, teams swapped back
+    #  and the 1st-innings file was overwritten with a 0-score 2nd-innings state.
+    if str(data.get("innings", "1")).strip() == "2":
+        try:
+            started = (int(data.get("score", 0) or 0) > 0 or int(data.get("over", 0) or 0) > 0
+                       or int(data.get("ball", 0) or 0) > 0)
+        except ValueError:
+            started = False
+        return redirect("/live-match" if started else "/opening-players")
+
     match_file = data.get("first_match_file")
 
     # 🔥 SAVE 1ST INNINGS
@@ -4908,6 +5280,18 @@ def start_second_2():
             if "=" in line:
                 k, v = line.strip().split("=", 1)
                 data[k] = v
+
+    #  FIX: this is a GET route that swaps the teams and rewrites the 1st-innings file.
+    #  A double-click on OK, a back/forward, or a retried request used to run it a 2nd
+    #  time on the already-reset 2nd-innings state: target became 1, teams swapped back
+    #  and the 1st-innings file was overwritten with a 0-score 2nd-innings state.
+    if str(data.get("innings", "1")).strip() == "2":
+        try:
+            started = (int(data.get("score", 0) or 0) > 0 or int(data.get("over", 0) or 0) > 0
+                       or int(data.get("ball", 0) or 0) > 0)
+        except ValueError:
+            started = False
+        return redirect("/live-match-2" if started else "/opening-players-2")
 
     match_file = data.get("first_match_file")
 
@@ -5410,10 +5794,41 @@ def save_wicket():
         #  only happen when the browser navigated on to /live-match with a new batsman,
         #  which never happened for the last wicket of an innings/match -- so that wicket
         #  never reached the bowler's figures.
-        if not wicket_type.startswith("Run out") and wicket_type != "retire":
+        if not wicket_type.lower().startswith("run out") and wicket_type.lower() != "retire":
             bw = match.get("b_wickets")
             prev_bw = int(bw) if str(bw).isdigit() else 0
             match["b_wickets"] = str(prev_bw + 1)
+
+            #  The number above is the live counter checked while the innings continues.
+            #  Also refresh the persistent bowler scorecard (bowler_log) right now, so a
+            #  wicket that also ends the bowler's over/spell isn't lost before anything
+            #  else gets a chance to save it.
+            try:
+                b_balls = int(match.get("b_balls", 0))
+                b_runs = int(match.get("b_runs", 0))
+                b_maiden = int(match.get("b_maiden", 0))
+                b_wk = int(match.get("b_wickets", 0))
+                overs_done, rem = divmod(b_balls, 6)
+                over_text = f"{overs_done}.{rem}"
+                er = round((b_runs / (b_balls / 6)) if b_balls else 0, 2)
+                entry = f"{bowler}={over_text},{b_runs},{b_maiden},{b_wk},{er}"
+                blog = match.get("bowler_log", "")
+                new_blog, found = [], False
+                if blog:
+                    for e in blog.split("|"):
+                        n = e.split("=")[0]
+                        if n == bowler:
+                            new_blog.append(entry)
+                            found = True
+                        else:
+                            new_blog.append(e)
+                    if not found:
+                        new_blog.append(entry)
+                    match["bowler_log"] = "|".join(new_blog)
+                else:
+                    match["bowler_log"] = entry
+            except Exception:
+                pass
 
         #  FIX: the Fall of Wickets entry for this dismissal was written by the browser
         #  the moment the wicket happened, and at that moment it always guessed "striker"
@@ -5424,7 +5839,9 @@ def save_wicket():
             fow = json.loads(match.get("fall_of_wickets", "[]"))
         except Exception:
             fow = []
-        if fow:
+        #  FIX: a retirement is not a wicket and adds no Fall-of-Wicket entry, so it must not
+        #  rename the previous (real) wicket's entry.
+        if fow and wicket_type.lower() != "retire":
             fow[-1]["player"] = out_player
             match["fall_of_wickets"] = json.dumps(fow)
 
@@ -5438,6 +5855,12 @@ def save_wicket():
 
     if match_file:
         safe_write(match_file, match)
+
+    #  FIX (undo): the wicket is now part of this ball's history line.
+    try:
+        replace_last_history(history_line(match))
+    except Exception as e:
+        print("HISTORY UPDATE ERROR:", e)
 
     return {"status": "ok"}
 
@@ -5489,10 +5912,41 @@ def save_wicket_2():
         #  only happen when the browser navigated on to /live-match with a new batsman,
         #  which never happened for the last wicket of an innings/match -- so that wicket
         #  never reached the bowler's figures.
-        if not wicket_type.startswith("Run out") and wicket_type != "retire":
+        if not wicket_type.lower().startswith("run out") and wicket_type.lower() != "retire":
             bw = match.get("b_wickets")
             prev_bw = int(bw) if str(bw).isdigit() else 0
             match["b_wickets"] = str(prev_bw + 1)
+
+            #  The number above is the live counter checked while the innings continues.
+            #  Also refresh the persistent bowler scorecard (bowler_log) right now, so a
+            #  wicket that also ends the bowler's over/spell isn't lost before anything
+            #  else gets a chance to save it.
+            try:
+                b_balls = int(match.get("b_balls", 0))
+                b_runs = int(match.get("b_runs", 0))
+                b_maiden = int(match.get("b_maiden", 0))
+                b_wk = int(match.get("b_wickets", 0))
+                overs_done, rem = divmod(b_balls, 6)
+                over_text = f"{overs_done}.{rem}"
+                er = round((b_runs / (b_balls / 6)) if b_balls else 0, 2)
+                entry = f"{bowler}={over_text},{b_runs},{b_maiden},{b_wk},{er}"
+                blog = match.get("bowler_log", "")
+                new_blog, found = [], False
+                if blog:
+                    for e in blog.split("|"):
+                        n = e.split("=")[0]
+                        if n == bowler:
+                            new_blog.append(entry)
+                            found = True
+                        else:
+                            new_blog.append(e)
+                    if not found:
+                        new_blog.append(entry)
+                    match["bowler_log"] = "|".join(new_blog)
+                else:
+                    match["bowler_log"] = entry
+            except Exception:
+                pass
 
         #  FIX: the Fall of Wickets entry for this dismissal was written by the browser
         #  the moment the wicket happened, and at that moment it always guessed "striker"
@@ -5503,7 +5957,9 @@ def save_wicket_2():
             fow = json.loads(match.get("fall_of_wickets", "[]"))
         except Exception:
             fow = []
-        if fow:
+        #  FIX: a retirement is not a wicket and adds no Fall-of-Wicket entry, so it must not
+        #  rename the previous (real) wicket's entry.
+        if fow and wicket_type.lower() != "retire":
             fow[-1]["player"] = out_player
             match["fall_of_wickets"] = json.dumps(fow)
 
@@ -5517,6 +5973,12 @@ def save_wicket_2():
 
     if match_file:
         safe_write(match_file, match)
+
+    #  FIX (undo): the wicket is now part of this ball's history line.
+    try:
+        replace_last_history_2(history_line(match))
+    except Exception as e:
+        print("HISTORY UPDATE ERROR:", e)
 
     return {"status": "ok"}
 
@@ -6864,13 +7326,16 @@ def points():
                             nrr_value = (runs_scored / overs_faced) - (runs_conceded / overs_bowled)
 
                     # 🔥 build data
+                    #  FIX: a tie / no-result match (played but neither won nor lost) is worth
+                    #  1 point each; it used to give 0. Shown in the NR column.
+                    tied = max(0, matches - won - lost)
                     data = {
                         "team": team,
                         "p": matches,
                         "w": won,
                         "l": lost,
-                        "nr": 0,
-                        "pts": won * 2,
+                        "nr": tied,
+                        "pts": won * 2 + tied,
                         "nrr": f"{nrr_value:+.2f}"
                     }
 
@@ -6923,7 +7388,7 @@ def points():
         eliminated_b=eliminated_b
     )
 
-#nrr file create
+#nrr file create 
 def ensure_nrr_files():
 
     import os
@@ -6974,7 +7439,7 @@ def update_nrr_stats():
 
     try:
 
-        with open("data/advanced_setting.txt") as f:
+        with open("data/advanced_settings.txt") as f:
 
             for line in f:
 
@@ -7053,6 +7518,12 @@ def update_nrr_stats():
         if not team1 or not team2:
             continue
 
+        #  FIX: only count matches that have a result. Before, a match in progress (or a
+        #  1st innings with no chase yet) was counted with its partial runs/overs, so
+        #  NRR on /points changed ball by ball while a match was live.
+        if not second.get("match_result", "").strip():
+            continue
+
         # =========================
         # 🔥 SCORE DATA
         # =========================
@@ -7069,12 +7540,17 @@ def update_nrr_stats():
 
             overs = over + (ball / 6)
 
-            # 🔥 all out
+            # 🔥 ICC RULE: all out (players-1 wickets) -> full quota of overs
+            # counts as faced (by this team) and bowled (by the opponent)
             if wickets >= all_out_wickets:
 
                 try:
 
-                    overs = int(d.get("overs", "20"))
+                    overs = float(
+                        d.get("overs")
+                        or first.get("overs")
+                        or 20
+                    )
 
                 except:
 
@@ -7118,6 +7594,16 @@ def update_nrr_stats():
     # =========================
     # 🔥 SAVE
     # =========================
+
+    # teams with no finished match must not keep a stale NRR file from an earlier run
+    try:
+        for fn in os.listdir(nrr_folder):
+            if fn.endswith(".txt") and fn[:-4] not in stats:
+                with open(os.path.join(nrr_folder, fn), "w") as f:
+                    f.write("total_runs_scored=0\ntotal_overs_faced=0\n"
+                            "total_runs_conceded=0\ntotal_overs_bowled=0\n")
+    except Exception:
+        pass
 
     for team, s in stats.items():
 
@@ -8668,42 +9154,12 @@ def download_match_pdf(filename):
         # Do NOT use the public ngrok URL here.
         url = "http://127.0.0.1:5000" + url
 
-        with sync_playwright() as p:
-
-            browser = p.chromium.launch(
-                headless=True
-            )
-
-            page = browser.new_page(
-                viewport={
-                    "width": 1280,
-                    "height": 1800
-                },
-                device_scale_factor=1
-            )
-
-            # IMPORTANT:
-            # The variable is "url", not "pdf_url".
-            page.goto(
-                url,
-                wait_until="networkidle"
-            )
-
-            page.wait_for_timeout(500)
-
-            pdf_bytes = page.pdf(
-                format="A4",
-                print_background=True,
-                prefer_css_page_size=True,
-                margin={
-                    "top": "8mm",
-                    "right": "8mm",
-                    "bottom": "8mm",
-                    "left": "8mm"
-                }
-            )
-
-            browser.close()
+        #  Was: launch a brand new headless Chromium browser here, every single time.
+        #  Now: reuse the one shared browser (render_match_pdf, defined near the top of
+        #  this file) -- only a lightweight page open/close per download, not a full
+        #  browser startup. wait_until="load" instead of "networkidle" also means it no
+        #  longer waits for background requests that may never fully go idle.
+        pdf_bytes = render_match_pdf(url)
 
         pdf_filename = filename.replace(
             "_1st.txt",

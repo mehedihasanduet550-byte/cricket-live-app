@@ -324,6 +324,22 @@
 <script>
 function retirePlayer(){
 
+    // FIX: strike changes on screen after every odd run, but the names kept in
+    // localStorage were only refreshed on page load / at a wicket. The Fall-of-wicket page
+    // then offered the OLD striker as "striker" (its default), so retiring the batsman you
+    // see on strike could retire the other one. Read who is where RIGHT NOW from the screen.
+    try {
+        const sEl = document.getElementById("strikerName");
+        const nsEl = document.getElementById("nonStrikerName");
+        if (sEl && nsEl) {
+            localStorage.setItem("strikerName", sEl.innerText.replace(" *", "").trim());
+            localStorage.setItem("nonStrikerName", nsEl.innerText.trim());
+        }
+    } catch (e) {}
+    // a leftover "innings is ending" flag from an earlier wicket must not hide the
+    // new-batsman box for a retirement
+    localStorage.removeItem("pendingAfterWicket");
+
 
 localStorage.setItem(
     "wicketType",

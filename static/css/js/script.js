@@ -790,12 +790,16 @@ function updateNeed(){
     let ballsPlayed = over * 6 + ball;
     let totalBalls = totalOvers * 6;
 
-    let ballsLeft = totalBalls - ballsPlayed;
-    let runsNeeded = target - score;
+    let ballsLeft = Math.max(0, totalBalls - ballsPlayed);
+    let runsNeeded = Math.max(0, target - score);
 
-    // 🔥 TEXT UPDATE
-    document.getElementById("needText").innerText =
-        `${team} need ${runsNeeded} runs in ${ballsLeft} balls`;
+    // 🔥 TEXT UPDATE (same wording as the server: never negative, "1 run"/"1 ball")
+    const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+    let needMsg;
+    if (runsNeeded <= 0) needMsg = `${team} won`;
+    else if (ballsLeft <= 0) needMsg = "Overs finished";
+    else needMsg = `${team} need ${plural(runsNeeded, "run")} in ${plural(ballsLeft, "ball")}`;
+    document.getElementById("needText").innerText = needMsg;
 
     
 }
