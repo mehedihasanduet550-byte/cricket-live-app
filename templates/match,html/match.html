@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Match</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+<div class="nav">
+    <a href="/stats">Back</a>
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+</div>
+<!-- 🔝 NAV -->
+<div class="nav">
+    <button onclick="showTab('live')">Live</button>
+    <button onclick="showTab('score')">Scorecard</button>
+    <button onclick="showTab('over')">Over</button>
+    <button onclick="showTab('squad')">Squads</button>
+    
+</div>
+
+<!-- 🔴 LIVE TAB -->
+<div id="liveTab">
+    <div id="matchLiveContainer" class="live-container" style="padding: 5px;">
+        {% include "match_live_partial.html" %}
+    </div>
+</div>
+
+<!-- 🔵 SCORE -->
+<div id="scoreTab" style="display:none;">
+    {% include "partials/history_scorecard.html" %}
+    </div><!-- history_scorecard.html-er na-bondho div bondho kora holo (Over/Squad tab dekha jaoar jonno) -->
+</div>
+
+<!-- ================= OVER TAB ================= -->
+<div id="overTab" style="display:none;">
+    <h2 class="fixture-title" style="text-align:center;">🏏 Over Summary</h2>
+
+    {% set current_innings = data.get('innings', '') %}
+    {% set has_live_over_data = (not request.args.get('file')) and (current_innings in ['1', '2']) and (data.get('over_log', '').strip() or data.get('this_over', '').strip()) %}
+
+    {% if has_live_over_data and current_innings == '1' %}
+        {% set first_log = data.get('over_log', '') %}
+        {% set first_running = data.get('this_over', '') %}
+        {% set second_log = '' %}
+        {% set second_running = '' %}
+    {% elif has_live_over_data and current_innings == '2' %}
+        {% set first_log = first.get('over_log', '') %}
+        {% set first_running = first.get('this_over', '') %}
+        {% set second_log = data.get('over_log', '') %}
+        {% set second_running = data.get('this_over', '') %}
+    {% else %}
+        {% set first_log = first.get('over_log', '') %}
+        {% set first_running = first.get('this_over', '') %}
+        {% set second_log = second.get('over_log', '') %}
+        {% set second_running = second.get('this_over', '') %}
+    {% endif %}
+
+    {% macro show_innings(title, log, running) %}
+        {% if log or running %}
+        <div class="over-card">
+            <h3 style="text-align:center;color:white;">{{ title }}</h3>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-top:15px;">
+                {% for ov in log.split('|') if ov.strip() %}
+                    <div>
+                        <div style="color:#ffd54f;margin-bottom:6px;font-weight:bold;">Over {{ loop.index }}</div>
+                        <div style="display:flex;gap:8px;overflow-x:auto;">
+                            {% for ball in ov.split(',') if ball.strip() %}
+                                {% set b = '0' if ball.strip() == '.' else ball.strip() %}
+                                <div class="over-ball{% if b == '4' %} four{% elif b == '6' %} six{% elif b|upper == 'W' %} wicket{% endif %}">{{ b }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+                {% if running.strip() %}
+                    <div>
+                        <div style="color:#00ff9c;margin-bottom:6px;font-weight:bold;">Over {{ log.split('|')|select|list|length + 1 }} <span style="font-size:12px;">(Running)</span></div>
+                        <div style="display:flex;gap:8px;overflow-x:auto;">
+                            {% for ball in running.split(',') if ball.strip() %}
+                                {% set b = '0' if ball.strip() == '.' else ball.strip() %}
+                                <div class="over-ball{% if b == '4' %} four{% elif b == '6' %} six{% elif b|upper == 'W' %} wicket{% endif %}">{{ b }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    {% endmacro %}
+
+    {{ show_innings('1st Innings', first_log, first_running) }}
+    {{ show_innings('2nd Innings', second_log, second_running) }}
+
+    {% if not first_log and not first_running and not second_log and not second_running %}
+        <div class="over-card" style="text-align:center;color:white;">এখনো কোনো বল খেলা হয়নি।</div>
+    {% endif %}
+</div>
+
+<!-- 🟢 SQUAD -->
+<div id="squadTab" style="display:none;">
+    {% set host = first.get("host", "") %}
+    {% set visitor = first.get("visitor", "") %}
+    <h2 class="fixture-title">🏏 Team Squads</h2>
+
+    <div class="squad-header">
+
+        <span style="display:flex; align-items:center; gap:6px;">
+            <img src="{{ url_for('static', filename='images/teams/' + host + '.webp') }}"
+                 style="width:65px; height:45px;">
+            {{ host|upper }}
+        </span>
+
+        <span style="display:flex; align-items:center; gap:6px;">
+            <img src="{{ url_for('static', filename='images/teams/' + visitor + '.webp') }}"
+                 style="width:65px; height:45px;">
+            {{ visitor|upper }}
+        </span>
+
+    </div>
+
+    <div class="squad-grid">
+
+        <!-- PLAYING -->
+        <div class="team-card row-card center-card playing"
+        style="grid-column:1/-1;">
+            <div>Playing XI</div>
+        </div>
+
+        <!-- TEAM 1 -->
+        <div>
+        {% for p in t1_play %}
+
+            <div class="player-row">
+
+                <div class="player-left">
+
+                    <div class="avatar">
+
+                        {%- set photo = player_photo_url(p.name) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
+                        onerror="this.style.display='none';
+                        this.nextElementSibling.style.display='flex';">
+
+                        <div class="initial">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- endif %}
+
+                    </div>
+
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+        </div>
+
+        <!-- TEAM 2 -->
+        <div>
+        {% for p in t2_play %}
+
+            <div class="player-row">
+
+                <div class="player-left">
+
+                    <div class="avatar">
+
+                        {%- set photo = player_photo_url(p.name) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
+                        onerror="this.style.display='none';
+                        this.nextElementSibling.style.display='flex';">
+
+                        <div class="initial">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- endif %}
+
+                    </div>
+
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+        </div>
+
+        <!-- BENCH -->
+        <div class="team-card row-card center-card bench"
+        style="grid-column:1/-1;">
+            <div>Bench</div>
+        </div>
+
+        <!-- TEAM 1 -->
+        <div>
+        {% for p in t1_bench %}
+
+            <div class="player-row">
+
+                <div class="player-left">
+
+                    <div class="avatar">
+
+                        {%- set photo = player_photo_url(p.name) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
+                        onerror="this.style.display='none';
+                        this.nextElementSibling.style.display='flex';">
+
+                        <div class="initial">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- endif %}
+
+                    </div>
+
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+        </div>
+
+        <!-- TEAM 2 -->
+        <div>
+        {% for p in t2_bench %}
+
+            <div class="player-row">
+
+                <div class="player-left">
+
+                    <div class="avatar">
+
+                        {%- set photo = player_photo_url(p.name) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
+                        onerror="this.style.display='none';
+                        this.nextElementSibling.style.display='flex';">
+
+                        <div class="initial">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- endif %}
+
+                    </div>
+
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+        </div>
+
+        <!-- STAFF -->
+        <div class="team-card row-card center-card staff"
+        style="grid-column:1/-1;">
+            <div>Supporting Staff</div>
+        </div>
+
+        <!-- TEAM 1 -->
+        <div>
+        {% for p in t1_staff %}
+
+            <div class="player-row">
+
+                <div class="player-left">
+
+                    <div class="avatar">
+
+                        {%- set photo = player_photo_url(p.name) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
+                        onerror="this.style.display='none';
+                        this.nextElementSibling.style.display='flex';">
+
+                        <div class="initial">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- endif %}
+
+                    </div>
+
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+        </div>
+
+        <!-- TEAM 2 -->
+        <div>
+        {% for p in t2_staff %}
+
+            <div class="player-row">
+
+                <div class="player-left">
+
+                    <div class="avatar">
+
+                        {%- set photo = player_photo_url(p.name) %}
+                        {%- if photo %}
+                        <img loading="lazy" src="{{ photo }}"
+                        onerror="this.style.display='none';
+                        this.nextElementSibling.style.display='flex';">
+
+                        <div class="initial">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- else %}
+                        <div class="initial" style="display:flex">
+                            {{ p.name[0] }}
+                        </div>
+                        {%- endif %}
+
+                    </div>
+
+                    <div>
+                        <div class="p-name">{{ p.name }}</div>
+                        <div class="p-role">{{ p.role }}</div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+        </div>
+
+    </div>
+</div>
+
+<!-- 🔥 SCRIPT -->
+<script>
+let modalOpen = false;
+function reloadScorecard(){
+    let url = window.location.href;
+
+    if(url.includes("?")){
+        url += "&t=" + Date.now();
+    }else{
+        url += "?t=" + Date.now();
+    }
+
+    fetch(url)
+        .then(res => res.text())
+        .then(html => {
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(html, "text/html");
+
+            let newScore = doc.querySelector("#scoreContent").innerHTML;
+            document.querySelector("#scoreContent").innerHTML = newScore;
+        });
+}
+
+function showTab(tab){
+    document.getElementById("liveTab").style.display = "none";
+    document.getElementById("scoreTab").style.display = "none";
+    document.getElementById("squadTab").style.display = "none";
+    document.getElementById("overTab").style.display = "none";
+
+    if(tab === "live") document.getElementById("liveTab").style.display = "block";
+    else if(tab === "score") document.getElementById("scoreTab").style.display = "block";
+    else if(tab === "squad") { document.getElementById("squadTab").style.display = "block"; reloadSquadTab(); }
+    else if(tab === "over") { document.getElementById("overTab").style.display = "block"; reloadOverTab(); }
+
+    if(tab === "score") reloadScorecard();
+}
+
+// 🔥 AUTO RELOAD (score tab open থাকলে)
+setInterval(() => {
+    if(document.getElementById("scoreTab").style.display === "block"){
+        reloadScorecard();
+    }
+}, 1000);
+
+
+// 🔥 LIVE AUTO UPDATE
+function reInitLive(){
+    if(typeof updateCRR === "function") updateCRR();
+    if(typeof updateRRR === "function") updateRRR();
+}
+
+setInterval(() => {
+     if(modalOpen) return; 
+    fetch("/match-live-data")
+        .then(res => res.text())
+        .then(html => {
+            document.getElementById("matchLiveContainer").innerHTML = html;
+
+            if(typeof syncPartnershipFromDOM === "function"){
+                syncPartnershipFromDOM();   // 🔥 MAIN FIX
+            }
+
+            reInitLive();
+        });
+}, 1000);
+
+
+function reloadOverTab(){
+    const url = new URL(window.location.href);
+    url.searchParams.set("t", Date.now());
+    fetch(url.toString(), {cache:"no-store"})
+      .then(res => res.text())
+      .then(html => {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const fresh = doc.querySelector("#overTab");
+        const current = document.querySelector("#overTab");
+        if (fresh && current && current.style.display !== "none") current.innerHTML = fresh.innerHTML;
+      })
+      .catch(err => console.error("Over tab refresh failed:", err));
+}
+setInterval(() => {
+    const tab = document.getElementById("overTab");
+    if (tab && tab.style.display !== "none") reloadOverTab();
+}, 1500);
+
+// 🔥 SQUAD TAB: Over-er moto live auto-refresh
+function reloadSquadTab(){
+    const url = new URL(window.location.href);
+    url.searchParams.set("t", Date.now());
+    fetch(url.toString(), {cache:"no-store"})
+      .then(res => res.text())
+      .then(html => {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const fresh = doc.querySelector("#squadTab");
+        const current = document.querySelector("#squadTab");
+        if (fresh && current && current.style.display !== "none") current.innerHTML = fresh.innerHTML;
+      })
+      .catch(err => console.error("Squad tab refresh failed:", err));
+}
+setInterval(() => {
+    const tab = document.getElementById("squadTab");
+    if (tab && tab.style.display !== "none") reloadSquadTab();
+}, 1500);
+
+</script>
+<script src="{{ url_for('static', filename='css/js/script.js') }}"></script>
+<script>
+
+let savedOverScroll = 0;
+
+function saveOverScroll(pos){
+    savedOverScroll = pos;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    let observer = new MutationObserver(() => {
+
+        let el = document.getElementById("overLogScroll");
+
+        if(el){
+            el.scrollLeft = savedOverScroll;
+        }
+
+    });
+
+    observer.observe(document.getElementById("matchLiveContainer"), {
+        childList: true,
+        subtree: true
+    });
+
+});
+
+</script>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+</body>
+</html>

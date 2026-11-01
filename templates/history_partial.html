@@ -92,8 +92,8 @@
     <div class="action-row">
 
         {% if m.status != "COMPLETED" %}
-        <a href="{{ url_for('resume_match', file=m.file) }}" class="resume-btn">
-            ▶ Resume
+        <a href="{{ url_for('resume_match_2' if m.engine == '2' else 'resume_match', file=m.file) }}" class="resume-btn">
+            ▶ Resume{% if m.engine == '2' %} (New Match 2){% endif %}
         </a>
         {% endif %}
 

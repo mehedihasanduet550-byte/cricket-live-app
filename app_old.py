@@ -529,6 +529,11 @@ def append_history(line):
         with open("data/history.txt", "r") as f:
             old = f.read()
 
+    #  FIX: an identical consecutive state is a duplicate request, not a new ball
+    #  (it would need a second Undo click to get past).
+    if ("\n" + old).endswith("\n" + line + "\n"):
+        return
+
     old += line + "\n"
 
     with open(temp, "w") as f:
@@ -546,6 +551,11 @@ def append_history_2(line):
 
         with open("data/history_2.txt", "r") as f:
             old = f.read()
+
+    #  FIX: an identical consecutive state is a duplicate request, not a new ball
+    #  (it would need a second Undo click to get past).
+    if ("\n" + old).endswith("\n" + line + "\n"):
+        return
 
     old += line + "\n"
 
@@ -586,6 +596,35 @@ def replace_last_history(line):
 
 def replace_last_history_2(line):
     _replace_last_history(line, "data/history_2.txt", "data/history_temp_2.txt")
+
+
+#  FIX: the "new batsman" and "new bowler" suggestion lists (fall-of-wicket / choose-bowler)
+#  used to list EVERYONE in the team file, including bench players and supporting staff
+#  (a coach even ended up bowling in a test match). Same rule as the opening-players page.
+def playing_names(team):
+    names = []
+    with open(f"data/teamlist/{team}.txt") as f:
+        for line in f:
+            parts = line.strip().split(",")
+            name = parts[0].strip()
+            if not name:
+                continue
+            roles = [p.strip().lower() for p in parts[1:]]
+            if "stf" in roles or "bench" in roles or "coach" in roles:
+                continue
+            names.append(name)
+    return names
+
+#  FIX: the chase "need" line used to read "need 0 runs in 1 balls" after the target was
+#  reached, and was missing until the first ball of the chase. One wording, used everywhere.
+def need_text_for(team, runs, balls):
+    runs = max(0, int(runs)); balls = max(0, int(balls))
+    if runs <= 0:
+        return f"{team} won"
+    if balls <= 0:
+        return "Overs finished"
+    return (f"{team} need {runs} run{'' if runs == 1 else 's'} "
+            f"in {balls} ball{'' if balls == 1 else 's'}")
 
 # =========================================================
 # 🔢 MATCH NUMBER SYSTEM
@@ -1698,10 +1737,21 @@ def get_auto_match_status():
 
     for path in ("data/current_match.txt", "data/current_match_2.txt"):
 
-        d = _read_kv(path, {"host", "visitor", "match_result"})
+        d = _read_kv(
+            path,
+            {"host", "visitor", "match_result", "first_match_file", "second_match_file"}
+        )
+
+        # A current-state file can remain after its History match was deleted.
+        # Do not keep showing RUNNING unless its saved match files still exist.
+        linked_match_exists = any(
+            saved and os.path.isfile(saved)
+            for saved in (d.get("first_match_file", ""), d.get("second_match_file", ""))
+        )
 
         if (
-            d.get("host")
+            linked_match_exists
+            and d.get("host")
             and d.get("visitor")
             and not d.get("match_result", "").strip()
         ):
@@ -1720,6 +1770,13 @@ def apply_auto_fixture_status(fixtures):
     from datetime import datetime
 
     completed, running = get_auto_match_status()
+
+    # Status in fixture.txt is only a leftover display value, not the source
+    # of truth. Rebuild it from the existing match files on every load so a
+    # deleted match cannot leave a stale RUNNING/COMPLETED label behind.
+    for fx in fixtures:
+        fx["status"] = ""
+        fx["completed"] = False
 
     if not completed and not running:
         return fixtures
@@ -2991,6 +3048,7 @@ def save_match():
     # 🔥 MATCH DATA
     match_data = {
 
+        "scoring_engine": "1",
         "host": host,
         "visitor": visitor,
 
@@ -3050,6 +3108,7 @@ def save_match():
 
     # 🔥 SAFE SAVE
     safe_write("data/current_match.txt", match_data)
+    safe_write(first_file, match_data)
 
     # 🔥 RESET HOME LOCK
     try:
@@ -3165,6 +3224,7 @@ def save_match_2():
     # 🔥 MATCH DATA
     match_data = {
 
+        "scoring_engine": "2",
         "host": host,
         "visitor": visitor,
 
@@ -3223,6 +3283,7 @@ def save_match_2():
 
     # 🔥 SAFE SAVE
     safe_write("data/current_match_2.txt", match_data)
+    safe_write(first_file, match_data)
 
     # 🔥 RESET HOME LOCK
     try:
@@ -4266,9 +4327,19 @@ def update_score():
     # 🔥 FINISHED OVER
     if data.get("finished_over"):
 
+        #  FIX: the same finished over posted twice (network retry / double tap) was
+        #  appended twice. After over N is finished the log must hold N entries, so
+        #  if entry N already exists, overwrite it instead of appending another.
         old = match.get("over_log", "")
-
-        if old:
+        entries = old.split("|") if old else []
+        try:
+            overs_done = int(match.get("over", 0))
+        except ValueError:
+            overs_done = 0
+        if overs_done > 0 and len(entries) >= overs_done:
+            entries[overs_done - 1] = data.get("finished_over")
+            match["over_log"] = "|".join(entries)
+        elif old:
             match["over_log"] = old + "|" + data.get("finished_over")
         else:
             match["over_log"] = data.get("finished_over")
@@ -4468,7 +4539,7 @@ def update_score():
 
         batting_team = match.get("batting", "")
 
-        match["need_text"] = f"{batting_team} need {runs_needed} runs in {balls_left} balls"
+        match["need_text"] = need_text_for(batting_team, runs_needed, balls_left)
 
     # 🔥 MATCH FILE SAVE
     # 🔥 MATCH FILE SAVE
@@ -4630,9 +4701,19 @@ def update_score_2():
     # 🔥 FINISHED OVER
     if data.get("finished_over"):
 
+        #  FIX: the same finished over posted twice (network retry / double tap) was
+        #  appended twice. After over N is finished the log must hold N entries, so
+        #  if entry N already exists, overwrite it instead of appending another.
         old = match.get("over_log", "")
-
-        if old:
+        entries = old.split("|") if old else []
+        try:
+            overs_done = int(match.get("over", 0))
+        except ValueError:
+            overs_done = 0
+        if overs_done > 0 and len(entries) >= overs_done:
+            entries[overs_done - 1] = data.get("finished_over")
+            match["over_log"] = "|".join(entries)
+        elif old:
             match["over_log"] = old + "|" + data.get("finished_over")
         else:
             match["over_log"] = data.get("finished_over")
@@ -4832,7 +4913,7 @@ def update_score_2():
 
         batting_team = match.get("batting", "")
 
-        match["need_text"] = f"{batting_team} need {runs_needed} runs in {balls_left} balls"
+        match["need_text"] = need_text_for(batting_team, runs_needed, balls_left)
 
     # 🔥 MATCH FILE SAVE
     # 🔥 MATCH FILE SAVE
@@ -4987,8 +5068,7 @@ def fall_wicket():
 
     batting = data["batting"]
 
-    with open(f"data/teamlist/{batting}.txt") as f:
-        players = [line.strip().split(",")[0] for line in f]
+    players = playing_names(batting)
 
     return render_template("fall_of_wicket.html", players=players)
 @app.route("/fall-of-wicket-2")
@@ -5003,8 +5083,7 @@ def fall_wicket_2():
 
     batting = data["batting"]
 
-    with open(f"data/teamlist/{batting}.txt") as f:
-        players = [line.strip().split(",")[0] for line in f]
+    players = playing_names(batting)
 
     return render_template(
         "fall_of_wicket_2.html",
@@ -5027,8 +5106,7 @@ def choose_bowler():
         return "Bowling team missing"
 
     # 🔥 SAME AS opening page
-    with open(f"data/teamlist/{bowling_team}.txt") as f:
-        bowlers = [line.strip().split(",")[0] for line in f]
+    bowlers = playing_names(bowling_team)
 
     return render_template("choose_bowler.html", bowlers=bowlers)
 
@@ -5048,8 +5126,7 @@ def choose_bowler_2():
         return "Bowling team missing"
 
     # 🔥 SAME AS opening page
-    with open(f"data/teamlist/{bowling_team}.txt") as f:
-        bowlers = [line.strip().split(",")[0] for line in f]
+    bowlers = playing_names(bowling_team)
 
     return render_template("choose_bowler_2.html", bowlers=bowlers)
 
@@ -5066,6 +5143,19 @@ def undo():
             lines = f.readlines()
 
         if len(lines) < 2:
+            return redirect("/live-match")
+
+        #  FIX: history.txt is one file for both innings, so undoing the very first
+        #  action of the 2nd innings used to restore the END of the 1st innings
+        #  (innings=1) and orphan the 2nd-innings file. Refuse to cross that boundary.
+        try:
+            prev_state = dict(i.split("=", 1) for i in lines[-2].strip().split(";;") if "=" in i)
+            with open("data/current_match.txt") as cf:
+                cur_state = dict(l.strip().split("=", 1) for l in cf if "=" in l)
+        except Exception:
+            prev_state, cur_state = {}, {}
+        if (prev_state.get("innings") and cur_state.get("innings")
+                and prev_state["innings"] != cur_state["innings"]):
             return redirect("/live-match")
 
         # 🔥 REMOVE LAST STATE
@@ -5133,6 +5223,19 @@ def undo_2():
         if len(lines) < 2:
             return redirect("/live-match-2")
 
+        #  FIX: history.txt is one file for both innings, so undoing the very first
+        #  action of the 2nd innings used to restore the END of the 1st innings
+        #  (innings=1) and orphan the 2nd-innings file. Refuse to cross that boundary.
+        try:
+            prev_state = dict(i.split("=", 1) for i in lines[-2].strip().split(";;") if "=" in i)
+            with open("data/current_match_2.txt") as cf:
+                cur_state = dict(l.strip().split("=", 1) for l in cf if "=" in l)
+        except Exception:
+            prev_state, cur_state = {}, {}
+        if (prev_state.get("innings") and cur_state.get("innings")
+                and prev_state["innings"] != cur_state["innings"]):
+            return redirect("/live-match-2")
+
         # 🔥 REMOVE LAST STATE
         lines = lines[:-1]
 
@@ -5181,7 +5284,9 @@ def undo_2():
 
         print("UNDO ERROR:", e)
 
-    return redirect("/live-match-2")
+    # Re-check the restored score after Undo. If the restored state still
+    # satisfies the match-ending condition, live_match_2 will reopen Result Modal.
+    return redirect("/live-match-2?checkResult=1")
 
 @app.route("/start-second")
 @locked(1)
@@ -5260,6 +5365,15 @@ def start_second():
 
     # 🔥 SECOND INNINGS
     data["innings"] = "2"
+
+    #  the chase line is correct from ball 0, not only after the first ball
+    try:
+        need_balls = int(data.get("overs", 0) or 0) * 6
+        data["need_runs"] = data["target"]
+        data["need_balls"] = str(need_balls)
+        data["need_text"] = need_text_for(data.get("batting", ""), int(data["target"]), need_balls)
+    except (ValueError, KeyError):
+        pass
 
     # 🔥 SAVE SECOND INNINGS FILE
     safe_write(data["second_match_file"], data)
@@ -5347,6 +5461,15 @@ def start_second_2():
     # 🔥 SECOND INNINGS
     data["innings"] = "2"
 
+    #  the chase line is correct from ball 0, not only after the first ball
+    try:
+        need_balls = int(data.get("overs", 0) or 0) * 6
+        data["need_runs"] = data["target"]
+        data["need_balls"] = str(need_balls)
+        data["need_text"] = need_text_for(data.get("batting", ""), int(data["target"]), need_balls)
+    except (ValueError, KeyError):
+        pass
+
     # 🔥 SAVE SECOND INNINGS FILE
     safe_write(data["second_match_file"], data)
 
@@ -5421,6 +5544,27 @@ def save_result_2():
         safe_write(match_file, match)
 
     return "OK"
+
+
+def detect_match_engine(file, first, second):
+    """Return scoring engine for a saved match, including the latest legacy Match 2."""
+    marker = second.get("scoring_engine") or first.get("scoring_engine")
+    if marker in ("1", "2"):
+        return marker
+    try:
+        with open("data/history_2.txt", encoding="utf-8") as hf:
+            lines = [x.strip() for x in hf if x.strip()]
+        if lines:
+            state = dict(x.split("=", 1) for x in lines[-1].split(";;") if "=" in x)
+            base = file[:-8] if file.endswith("_1st.txt") else file
+            expected_first = os.path.join("data", "all_match", base + "_1st.txt")
+            expected_second = os.path.join("data", "all_match", base + "_2nd.txt")
+            if (state.get("first_match_file") == expected_first
+                    or state.get("second_match_file") == expected_second):
+                return "2"
+    except Exception:
+        pass
+    return "1"
 
 
 @app.route("/history")
@@ -5522,6 +5666,7 @@ def history():
 
             "date": match_time,
             "match_number": first.get("match_number", "0"),
+            "engine": detect_match_engine(file, first, second),
             # 🔥 IMPORTANT
             "file": file
         }
@@ -5648,6 +5793,7 @@ def history_data():
 
             "date": match_time,
             "match_number": first.get("match_number", "0"),
+            "engine": detect_match_engine(file, first, second),
             # 🔥 IMPORTANT
             "file": file
         }
@@ -5699,53 +5845,98 @@ def delete_match(filename):
         os.remove(second_file)
 
     return redirect("/history")
-@app.route("/resume-match/<file>")
-def resume_match(file):
-
-    import shutil
+def _resume_match_file(file, engine):
+    """Restore a saved match into the matching scoring engine's state/history files."""
     import os
 
-    first_file = f"data/all_match/{file}_1st.txt"
-    second_file = f"data/all_match/{file}_2nd.txt"
+    # Reject path traversal and accept only the generated match basename.
+    if not file or os.path.basename(file) != file or "\\" in file or "/" in file:
+        return "Invalid match file", 400
 
-    target = "data/current_match.txt"
+    # History stores the actual *_1st.txt filename, not the bare match basename.
+    # Accept either form so old direct links remain compatible.
+    base = file
+    if base.endswith("_1st.txt"):
+        base = base[:-8]
+    elif base.endswith("_2nd.txt"):
+        base = base[:-8]
+    first_file = os.path.join("data", "all_match", f"{base}_1st.txt")
+    second_file = os.path.join("data", "all_match", f"{base}_2nd.txt")
+    if not os.path.exists(first_file):
+        return "Match not found", 404
 
     try:
-
         data = {}
-
-        # 🔥 LOAD FIRST INNINGS
-        if os.path.exists(first_file):
-
-            with open(first_file) as f:
-
+        for source in (first_file, second_file):
+            if not os.path.exists(source):
+                continue
+            with open(source, encoding="utf-8") as f:
                 for line in f:
-
                     if "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        data[k] = v
+                        key, value = line.rstrip("\n").split("=", 1)
+                        data[key] = value
 
-        # 🔥 LOAD SECOND INNINGS
-        if os.path.exists(second_file):
+        # The marker is authoritative. The route also enforces the requested engine.
+        saved_engine = str(data.get("scoring_engine", ""))
+        if not saved_engine:
+            # Legacy records created before scoring_engine was added: recognize the
+            # match if it is the one whose Match 2 undo timeline is still present.
+            try:
+                with open("data/history_2.txt", encoding="utf-8") as hf:
+                    old_lines = [x.strip() for x in hf if x.strip()]
+                if old_lines:
+                    old_last = dict(x.split("=", 1) for x in old_lines[-1].split(";;") if "=" in x)
+                    if (old_last.get("first_match_file") == first_file
+                            or old_last.get("second_match_file") == second_file):
+                        saved_engine = "2"
+            except Exception:
+                pass
+        if not saved_engine:
+            saved_engine = "1"
+        if saved_engine != str(engine):
+            return ("This match belongs to New Match " + saved_engine + ". "
+                    "Please use its matching Resume action."), 409
 
-            with open(second_file) as f:
+        data["scoring_engine"] = str(engine)
+        current_path = "data/current_match_2.txt" if engine == 2 else "data/current_match.txt"
+        history_path = "data/history_2.txt" if engine == 2 else "data/history.txt"
+        safe_write(current_path, data)
 
-                for line in f:
+        # Do not mix another match's undo timeline into this resumed match.
+        # Keep any existing timeline only if its last snapshot belongs to this match.
+        keep_history = False
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, encoding="utf-8") as hf:
+                    history_lines = [x.strip() for x in hf if x.strip()]
+                if history_lines:
+                    latest = dict(x.split("=", 1) for x in history_lines[-1].split(";;") if "=" in x)
+                    keep_history = (latest.get("first_match_file") == first_file
+                                    or latest.get("second_match_file") == second_file)
+            except Exception:
+                keep_history = False
+        if not keep_history:
+            with open(history_path, "w", encoding="utf-8") as hf:
+                hf.write(history_line(data) + "\n")
 
-                    if "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        data[k] = v
-
-        # 🔥 SAVE CURRENT MATCH
-        safe_write(target, data)
+        # Keep the selected innings file in sync with the restored state.
+        innings_file = data.get("first_match_file") if data.get("innings", "1") == "1" else data.get("second_match_file")
+        if innings_file:
+            safe_write(innings_file, data)
 
     except Exception as e:
-
         print("RESUME ERROR:", e)
+        return "Resume failed", 500
 
-        return "Resume failed"
+    return redirect("/live-match-2" if engine == 2 else "/live-match")
 
-    return redirect("/live-match")
+@app.route("/resume-match/<file>")
+def resume_match(file):
+    return _resume_match_file(file, 1)
+
+@app.route("/resume-match-2/<file>")
+def resume_match_2(file):
+    return _resume_match_file(file, 2)
 
 @app.route("/save-wicket", methods=["POST"])
 @locked(1)

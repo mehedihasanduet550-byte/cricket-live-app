@@ -4,6 +4,7 @@
     <title>Live Match</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
 </head>
 
 <body>
@@ -374,9 +375,16 @@ window.location.href ="/fall-of-wicket-2";
         const text = localStorage.getItem("pendingResultText") || "";
         localStorage.removeItem("pendingResultText");
         if (text) window.addEventListener("load", function () { finishMatch(text); });
+    } else if (params.get("checkResult") === "1") {
+        // Undo may restore the final legal ball/state. Recalculate from the
+        // restored score and reopen Result Modal only if the match is still over.
+        window.addEventListener("load", function () {
+            if (typeof checkMatchResult === "function") checkMatchResult();
+        });
     }
 })();
 </script>
+    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
 </body>
 <script>
 

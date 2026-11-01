@@ -2,55 +2,110 @@
 <html>
 <head>
     <title>{{ team }} Squad</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+    <style>
+        .sq-form { display:flex; flex-wrap:wrap; gap:8px; width:100%; align-items:center; }
+        .sq-form input[type=text] { flex:2 1 180px; min-width:140px; }
+        .sq-form select {
+            flex:1 1 130px; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.3);
+            background:rgba(0,0,0,0.35); color:white; font-size:14px;
+        }
+        .sq-form select option { color:black; }
+        .sq-hint { width:100%; font-size:12px; color:rgba(255,255,255,0.75); }
+        .sq-group { display:flex; justify-content:space-between; }
+        .sq-group small { opacity:.8; }
+        .sq-left { display:flex; flex-direction:column; gap:3px; align-items:flex-start; text-align:left; }
+        .sq-name { font-weight:bold; }
+        .sq-role { font-size:12px; opacity:.85; }
+        .sq-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start; }
+        .player-row { flex-wrap:wrap; gap:8px; }
+        .sq-actions a, .sq-actions button {
+            padding:5px 10px; border:none; border-radius:6px; color:white; cursor:pointer;
+            font-size:12px; text-decoration:none; display:inline-block;
+        }
+        .mv-playing { background:#1e88e5; }
+        .mv-bench   { background:#fb8c00; }
+        .mv-stf     { background:#8e24aa; }
+        .sq-empty { text-align:center; padding:10px; opacity:.8; }
+    </style>
 </head>
 <body>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <div class="nav">
-    
+    <a href="/squad">Back</a>
     <a href="/">Home</a>
     <a href="/stats">Scorecard</a>
     <a href="/team">Team Info</a>
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
-    
 </div>
 
-<h2 class="fixture-title">{{ team }} Squad</h2>
+<h2 class="fixture-title">{{ team }} Squad <small>({{ total }})</small></h2>
 
 <!-- 🔥 ADD PLAYER -->
 <div class="team-card row-card center-card">
     <div>➕ Add Player</div>
 </div>
 
-<!-- 🔥 ADD PLAYER BOX -->
-<form action="/add-player/{{ team }}" method="POST">
-<div class="team-card row-card add-box">
-    <input type="text" name="player" placeholder="Enter player name,role" required>
-    <button type="submit">Add</button>
+<form action="/add-player/{{ team|urlencode }}" method="POST">
+<div class="team-card row-card add-box" style="flex-wrap:wrap;">
+    <div class="sq-form">
+        <input type="text" name="name" placeholder="Player name" required autocomplete="off">
+
+        <select name="role" title="Role">
+            {% for r in roles %}
+            <option value="{{ r }}">{{ r }}</option>
+            {% endfor %}
+        </select>
+
+        <select name="status" title="Status">
+            <option value="playing">Playing XI</option>
+            <option value="bench">Bench</option>
+            <option value="stf">Staff</option>
+        </select>
+
+        <button type="submit">Add</button>
+       <!-- <div class="sq-hint">Name-er pore team-er number (jemon _24) nijei boshbe, bench/stf likhte hobe na.</div> -->
+    </div>
 </div>
 </form>
 
-<!-- 🔥 PLAYER LIST -->
-{% for p in players %}
+<!-- 🔥 PLAYER LIST (Playing XI / Bench / Staff alada) -->
+{% for key, title, items in groups %}
+
+<div class="team-card row-card center-card">
+    <div class="sq-group">{{ title }} &nbsp;<small>({{ items|length }})</small></div>
+</div>
+
+{% if not items %}
+<div class="sq-empty">Kono player nai</div>
+{% endif %}
+
+{% for p in items %}
 <div class="team-card row-card player-row">
 
-    <!-- left -->
-    <div class="left">
-        {{ loop.index }}. {{ p.name }} ,{{ p.role }}
+    <div class="sq-left">
+        <div class="sq-name">{{ loop.index }}. {{ p.name }}</div>
+        <div class="sq-role">{{ p.role }}</div>
     </div>
 
-    <!-- right -->
-    <div class="right actions">
+    <div class="sq-actions">
 
-        <!-- 🔥 EDIT (FIXED) -->
-        <button type="button"
-        onclick="openEdit('{{team}}', {{loop.index0}}, `{{p.name}},{{p.role}}`)"
-        class="edit-btn">Edit</button>
+        {% if key != 'playing' %}<a class="mv-playing" href="/move-player/{{ team|urlencode }}/{{ p.idx }}/playing">→ Playing</a>{% endif %}
+        {% if key != 'bench' %}<a class="mv-bench" href="/move-player/{{ team|urlencode }}/{{ p.idx }}/bench">→ Bench</a>{% endif %}
+        {% if key != 'stf' %}<a class="mv-stf" href="/move-player/{{ team|urlencode }}/{{ p.idx }}/stf">→ Staff</a>{% endif %}
 
-        <!-- 🔥 DELETE -->
-        <a href="/delete-player/{{team}}/{{ loop.index0 }}"
+        <button type="button" class="edit-btn"
+            data-index="{{ p.idx }}"
+            data-name="{{ p.name }}"
+            data-role="{{ p.role }}"
+            data-status="{{ p.status }}"
+            onclick="openEdit(this)">Edit</button>
+
+        <a href="/delete-player/{{ team|urlencode }}/{{ p.idx }}"
            onclick="return confirm('Delete player?')"
            class="delete-btn">Delete</a>
 
@@ -59,34 +114,31 @@
 </div>
 {% endfor %}
 
+{% endfor %}
+
 
 <!-- 🔥 EDIT MODAL -->
 <div id="editModal" class="modal">
 
-    <div class="team-card row-card add-box"
-    style="width:95%; max-width:900px;">
+    <div class="team-card row-card add-box" style="width:95%; max-width:900px;">
 
-        <form id="editForm" method="POST"
-        style="display:flex; gap:10px; width:100%;">
+        <form id="editForm" method="POST" class="sq-form">
 
-            <input
-            type="text"
-            name="player"
-            id="editInput"
-            required
+            <input type="text" name="name" id="editName" required autocomplete="off">
 
-            style="flex:1;">
+            <select name="role" id="editRole">
+                {% for r in roles %}
+                <option value="{{ r }}">{{ r }}</option>
+                {% endfor %}
+            </select>
 
-            <button
-            type="submit"
+            <select name="status" id="editStatus">
+                <option value="playing">Playing XI</option>
+                <option value="bench">Bench</option>
+                <option value="stf">Staff</option>
+            </select>
 
-            style="
-            min-width:100px;
-            ">
-
-            Update
-
-            </button>
+            <button type="submit" style="min-width:100px;">Update</button>
 
         </form>
 
@@ -97,14 +149,26 @@
 
 <!-- 🔥 JS -->
 <script>
-function openEdit(team, index, value) {
+const TEAM = {{ team|tojson }};
+
+function openEdit(btn) {
 
     const modal = document.getElementById("editModal");
-    const input = document.getElementById("editInput");
+    const role = document.getElementById("editRole");
     const form = document.getElementById("editForm");
 
-    input.value = value;
-    form.action = "/edit-player/" + team + "/" + index;
+    document.getElementById("editName").value = btn.dataset.name;
+
+    // list-e na thakle role-ta add kore nei
+    const r = btn.dataset.role;
+    if (r && ![...role.options].some(o => o.value === r)) {
+        role.add(new Option(r, r));
+    }
+    role.value = r || "PLAYER";
+
+    document.getElementById("editStatus").value = btn.dataset.status;
+
+    form.action = "/edit-player/" + encodeURIComponent(TEAM) + "/" + btn.dataset.index;
 
     modal.classList.add("show");
 }
@@ -128,5 +192,6 @@ fetch("/heartbeat")
 },5000)
 
 </script>
+    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
 </body>
 </html>

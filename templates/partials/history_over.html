@@ -1,0 +1,118 @@
+<!-- ================= OVER SUMMARY ================= -->
+<div id="overContent">
+    <h2 class="fixture-title">🏏 Over Summary</h2>
+
+    {# Live current_match data is authoritative for the innings in progress.
+       Saved first/second files remain the source for the other innings. #}
+    {% if data.get("innings", "1")|int == 1 %}
+        {% set first_over_log = data.get("over_log", "") or "" %}
+        {% set first_this_over = data.get("this_over", "") or "" %}
+        {% set first_batting = data.get("batting", first.get("batting", "")) %}
+    {% else %}
+        {% set first_over_log = first.get("over_log", "") or "" %}
+        {% set first_this_over = first.get("this_over", "") or "" %}
+        {% set first_batting = first.get("batting", "") %}
+    {% endif %}
+
+    <!-- 🔴 FIRST INNINGS -->
+    <div class="over-card">
+        <h3 style="text-align:center; color:white;">
+            1st Innings{% if first_batting %} — {{ first_batting }}{% endif %}
+        </h3>
+
+        <div style="display:flex; flex-direction:column; gap:12px; margin-top:15px;">
+            {% for ov in first_over_log.split("|") if ov.strip() %}
+                <div>
+                    <div style="color:#ffd54f; margin-bottom:6px; font-weight:bold;">
+                        Over {{ loop.index }}
+                    </div>
+                    <div style="display:flex; gap:8px; overflow-x:auto;">
+                        {% for ball in ov.split(",") if ball.strip() %}
+                            {% set b = ball.strip() %}
+                            {% set shown = "0" if b == "." else b %}
+                            <div class="over-ball{% if shown == '4' %} four{% elif shown == '6' %} six{% elif shown == 'W' %} wicket{% endif %}">
+                                {{ shown }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+
+            {% if first_this_over.strip() %}
+                <div>
+                    <div style="color:#00ff9c; margin-bottom:6px; font-weight:bold;">
+                        Over {{ first_over_log.split("|")|length + 1 }} <span style="font-weight:normal;">(Running)</span>
+                    </div>
+                    <div style="display:flex; gap:8px; overflow-x:auto;">
+                        {% for ball in first_this_over.split(",") if ball.strip() %}
+                            {% set b = ball.strip() %}
+                            {% set shown = "0" if b == "." else b %}
+                            <div class="over-ball{% if shown == '4' %} four{% elif shown == '6' %} six{% elif shown == 'W' %} wicket{% endif %}">
+                                {{ shown }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if not first_over_log.strip() and not first_this_over.strip() %}
+                <div style="color:white; text-align:center; padding:12px;">No ball data available yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if data.get("innings", "1")|int == 2 %}
+        {% set second_over_log = data.get("over_log", "") or "" %}
+        {% set second_this_over = data.get("this_over", "") or "" %}
+        {% set second_batting = data.get("batting", second.get("batting", "")) %}
+    {% else %}
+        {% set second_over_log = second.get("over_log", "") or "" %}
+        {% set second_this_over = second.get("this_over", "") or "" %}
+        {% set second_batting = second.get("batting", "") %}
+    {% endif %}
+
+    <!-- 🔵 SECOND INNINGS -->
+    {% if second_over_log.strip() or second_this_over.strip() or data.get("innings", "1")|int == 2 %}
+        <div class="over-card">
+            <h3 style="text-align:center; color:white;">
+                2nd Innings{% if second_batting %} — {{ second_batting }}{% endif %}
+            </h3>
+
+            <div style="display:flex; flex-direction:column; gap:12px; margin-top:15px;">
+                {% for ov in second_over_log.split("|") if ov.strip() %}
+                    <div>
+                        <div style="color:#ffd54f; margin-bottom:6px; font-weight:bold;">
+                            Over {{ loop.index }}
+                        </div>
+                        <div style="display:flex; gap:8px; overflow-x:auto;">
+                            {% for ball in ov.split(",") if ball.strip() %}
+                                {% set b = ball.strip() %}
+                                {% set shown = "0" if b == "." else b %}
+                                <div class="over-ball{% if shown == '4' %} four{% elif shown == '6' %} six{% elif shown == 'W' %} wicket{% endif %}">
+                                    {{ shown }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+
+                {% if second_this_over.strip() %}
+                    <div>
+                        <div style="color:#00ff9c; margin-bottom:6px; font-weight:bold;">
+                            Over {{ second_over_log.split("|")|length + 1 }} <span style="font-weight:normal;">(Running)</span>
+                        </div>
+                        <div style="display:flex; gap:8px; overflow-x:auto;">
+                            {% for ball in second_this_over.split(",") if ball.strip() %}
+                                {% set b = ball.strip() %}
+                                {% set shown = "0" if b == "." else b %}
+                                <div class="over-ball{% if shown == '4' %} four{% elif shown == '6' %} six{% elif shown == 'W' %} wicket{% endif %}">
+                                    {{ shown }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+</div>

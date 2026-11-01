@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ team }} Squad</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+</head>
+<body>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<div class="nav">
+    
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+    
+</div>
+
+<h2 class="fixture-title">{{ team }} Squad</h2>
+
+<!-- 🔥 ADD PLAYER -->
+<div class="team-card row-card center-card">
+    <div>➕ Add Player</div>
+</div>
+
+<!-- 🔥 ADD PLAYER BOX -->
+<form action="/add-player/{{ team }}" method="POST">
+<div class="team-card row-card add-box">
+    <input type="text" name="player" placeholder="Enter player name,role" required>
+    <button type="submit">Add</button>
+</div>
+</form>
+
+<!-- 🔥 PLAYER LIST -->
+{% for p in players %}
+<div class="team-card row-card player-row">
+
+    <!-- left -->
+    <div class="left">
+        {{ loop.index }}. {{ p.name }} ,{{ p.role }}
+    </div>
+
+    <!-- right -->
+    <div class="right actions">
+
+        <!-- 🔥 EDIT (FIXED) -->
+        <button type="button"
+        onclick="openEdit('{{team}}', {{loop.index0}}, `{{p.name}},{{p.role}}`)"
+        class="edit-btn">Edit</button>
+
+        <!-- 🔥 DELETE -->
+        <a href="/delete-player/{{team}}/{{ loop.index0 }}"
+           onclick="return confirm('Delete player?')"
+           class="delete-btn">Delete</a>
+
+    </div>
+
+</div>
+{% endfor %}
+
+
+<!-- 🔥 EDIT MODAL -->
+<div id="editModal" class="modal">
+
+    <div class="team-card row-card add-box"
+    style="width:95%; max-width:900px;">
+
+        <form id="editForm" method="POST"
+        style="display:flex; gap:10px; width:100%;">
+
+            <input
+            type="text"
+            name="player"
+            id="editInput"
+            required
+
+            style="flex:1;">
+
+            <button
+            type="submit"
+
+            style="
+            min-width:100px;
+            ">
+
+            Update
+
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+
+<!-- 🔥 JS -->
+<script>
+function openEdit(team, index, value) {
+
+    const modal = document.getElementById("editModal");
+    const input = document.getElementById("editInput");
+    const form = document.getElementById("editForm");
+
+    input.value = value;
+    form.action = "/edit-player/" + team + "/" + index;
+
+    modal.classList.add("show");
+}
+
+// click outside close
+window.onclick = function(e) {
+    const modal = document.getElementById("editModal");
+    if (e.target === modal) {
+        modal.classList.remove("show");
+    }
+}
+</script>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+</body>
+</html>

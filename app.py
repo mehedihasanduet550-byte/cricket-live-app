@@ -759,6 +759,115 @@ def load_teams():
 
 import random
 
+
+def get_home_matches():
+    """Home page-er jonno: (live_matches, completed_match) return kore.
+    - live_matches    : result nai emon match (max 2), notun age
+    - completed_match : sobcheye shesh complete hoye jawa match (na thakle None)
+    """
+    import os, re
+
+    folder = "data/all_match"
+    live_matches = []
+    completed_match = None
+
+    def read_kv(p):
+        d = {}
+        try:
+            with open(p, encoding="utf-8") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        d[k] = v
+        except Exception:
+            pass
+        return d
+
+    def match_time_key(fname):
+        # file name-er moddhe timestamp thake: ..._20261031_093134_1st.txt
+        m = re.search(r"_(\d{8}_\d{6})_1st\.txt$", fname)
+        if m:
+            return m.group(1)
+        try:
+            import time as _t
+            return _t.strftime("%Y%m%d_%H%M%S", _t.localtime(os.path.getmtime(os.path.join(folder, fname))))
+        except Exception:
+            return ""
+
+    try:
+        files = [f for f in os.listdir(folder) if f.endswith("_1st.txt")]
+    except Exception:
+        return live_matches, completed_match
+
+    # sobcheye notun match age
+    files.sort(key=match_time_key, reverse=True)
+
+    match2_file = ""
+    try:
+        with open("data/current_match_2.txt", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("first_match_file="):
+                    match2_file = os.path.basename(line.strip().split("=", 1)[1])
+    except Exception:
+        pass
+
+    for file in files:
+        path = os.path.join(folder, file)
+        first = read_kv(path)
+        if not first:
+            continue
+
+        second_file = path.replace("_1st.txt", "_2nd.txt")
+        second = read_kv(second_file) if os.path.exists(second_file) else {}
+
+        innings_break = len(second) > 0
+        team1 = first.get("batting")
+        team2 = second.get("batting") or first.get("bowling")
+
+        team2_score = second.get("score", "")
+        team2_wickets = second.get("wickets", "")
+        team2_over = f"{second.get('over','0')}.{second.get('ball','0')}"
+
+        if second.get("over", "0") == "0" and second.get("ball", "0") == "0":
+            if innings_break:
+                team2_score, team2_wickets, team2_over = "0", "0", "0.0"
+            else:
+                team2_score, team2_wickets, team2_over = "", "", ""
+
+        result_text = second.get("match_result", "")
+
+        match_data = {
+            "team1": team1,
+            "team1_score": first.get("score", "0"),
+            "team1_wickets": first.get("wickets", "0"),
+            "team1_over": f"{first.get('over','0')}.{first.get('ball','0')}",
+            "team2": team2,
+            "team2_score": team2_score,
+            "team2_wickets": team2_wickets,
+            "team2_over": team2_over,
+            "result": result_text,
+            "need_text": second.get("need_text"),
+            "toss": first.get("toss"),
+            "opt": first.get("opt"),
+            "innings_break": innings_break,
+            "file": file,
+            "page": "/match-2" if file == match2_file else "/match",
+        }
+
+        if not result_text:
+            if len(live_matches) < 2:
+                match_data["status"] = "LIVE"
+                live_matches.append(match_data)
+        elif completed_match is None:
+            match_data["status"] = "COMPLETED"
+            completed_match = match_data
+
+        if len(live_matches) >= 2 and completed_match:
+            break
+
+    return live_matches, completed_match
+
+
 @app.route("/")
 def home():
     import os, random
@@ -813,150 +922,7 @@ def home():
 
     banner = random.choice(banners) if banners else None
 
-    live_matches = []
-    completed_match = None
-
-    try:
-        folder = "data/all_match"
-        lock_file = "data/home_current.txt"
-
-        files = sorted(os.listdir(folder), reverse=True)
-        # 🔥 ONLY FIRST INNINGS FILE
-        files = [f for f in files if f.endswith("_1st.txt")]
-        # 🔥 LOCK LOAD (FIXED)
-        if os.path.exists(lock_file):
-            with open(lock_file) as f:
-                locked = f.read().strip()
-
-            if locked in files:
-                files = [locked]
-
-        match2_file = ""
-
-        try:
-            with open("data/current_match_2.txt") as f:
-                for line in f:
-                    if line.startswith("first_match_file="):
-                        match2_file = os.path.basename(
-                            line.strip().split("=", 1)[1]
-                        )
-        except:
-            pass
-        for file in files:
-            path = os.path.join(folder, file)
-
-            with open(path) as f:
-                content = f.read()
-
-            # 🔥 LOAD FIRST INNINGS
-
-            first = {}
-
-            for line in content.splitlines():
-
-                if "=" in line:
-                    k, v = line.strip().split("=", 1)
-                    first[k] = v
-
-            # 🔥 LOAD SECOND INNINGS
-
-            second = {}
-
-            second_file = path.replace("_1st.txt", "_2nd.txt")
-
-            if os.path.exists(second_file):
-
-                with open(second_file) as sf:
-
-                    for line in sf:
-
-                        if "=" in line:
-                            k, v = line.strip().split("=", 1)
-                            second[k] = v
-
-            innings_break = len(second) > 0
-
-            team1 = first.get("batting")
-            team2 = second.get("batting") or first.get("bowling")
-
-            team2_score = second.get("score", "")
-            team2_wickets = second.get("wickets", "")
-            team2_over = f"{second.get('over','0')}.{second.get('ball','0')}"
-
-            if second.get("over", "0") == "0" and second.get("ball", "0") == "0":
-                if innings_break:
-                    team2_score = "0"
-                    team2_wickets = "0"
-                    team2_over = "0.0"
-                else:
-                    team2_score = ""
-                    team2_wickets = ""
-                    team2_over = ""
-
-            result_text = ""
-            result_text = second.get("match_result", "")
-
-            match_data = {
-                "team1": team1,
-                "team1_score": first.get("score", "0"),
-                "team1_wickets": first.get("wickets", "0"),
-                "team1_over": f"{first.get('over','0')}.{first.get('ball','0')}",
-
-                "team2": team2,
-                "team2_score": team2_score,
-                "team2_wickets": team2_wickets,
-                "team2_over": team2_over,
-
-                "result": result_text,
-                "need_text": second.get("need_text"),
-                "toss": first.get("toss"),
-                "opt": first.get("opt"),
-                "innings_break": innings_break,
-                "file": file,
-            }
-            if file == match2_file:
-                match_data["page"] = "/match-2"
-            else:
-                match_data["page"] = "/match"
-            if not result_text:
-
-                match_data["status"] = "LIVE"
-                live_matches.append(match_data)
-
-                if len(live_matches) >= 2:
-                    break
-
-                # 🔥 NEW LIVE MATCH → LOCK UPDATE (ADD HERE)
-                try:
-                    if os.path.exists(lock_file):
-                        with open(lock_file) as f:
-                            locked = f.read().strip()
-
-                        if locked != file:
-                            with open(lock_file, "w") as f:
-                                f.write(file)
-                except:
-                    pass
-
-            
-
-            if result_text and completed_match is None:
-                match_data["status"] = "COMPLETED"
-                completed_match = match_data
-
-            # 🔥 LOCK SAVE (FIRST TIME ONLY)
-            if not os.path.exists(lock_file):
-                with open(lock_file, "w") as f:
-                    f.write(file)
-
-            if live_match and completed_match:
-                break
-
-        live_match = live_match  # শুধু live থাকলেই show হবে
-
-    except:
-        pass
-
+    live_matches, completed_match = get_home_matches()
     response = render_template(
         "index.html",
 
@@ -967,7 +933,8 @@ def home():
 
         admin=session.get("admin"),
 
-        live_matches=live_matches
+        live_matches=live_matches,
+        completed_match=completed_match
     )
 
     resp = app.make_response(response)
@@ -994,192 +961,11 @@ def home_live_data():
 
         return home_cache["data"]
 
-    live_matches = []
-    completed_match = None
-
-    try:
-
-        folder = "data/all_match"
-
-        lock_file = "data/home_current.txt"
-
-        files = sorted(os.listdir(folder), reverse=True)
-
-        # 🔥 ONLY FIRST INNINGS FILE
-        files = [f for f in files if f.endswith("_1st.txt")]
-
-        # 🔥 LOCK LOAD
-        match2_file = ""
-
-        try:
-            with open("data/current_match_2.txt") as f:
-                for line in f:
-                    if line.startswith("first_match_file="):
-                        match2_file = os.path.basename(
-                            line.strip().split("=",1)[1]
-                        )
-        except:
-            pass
-
-        for file in files:
-
-            path = os.path.join(folder, file)
-
-            first = {}
-            second = {}
-
-            # =========================
-            # 🔥 LOAD FIRST INNINGS
-            # =========================
-
-            try:
-
-                with open(path) as f:
-
-                    for line in f:
-
-                        if "=" in line:
-
-                            k, v = line.strip().split("=", 1)
-
-                            first[k] = v
-
-            except:
-                continue
-
-            # =========================
-            # 🔥 LOAD SECOND INNINGS
-            # =========================
-
-            second_file = path.replace("_1st.txt", "_2nd.txt")
-
-            if os.path.exists(second_file):
-
-                try:
-
-                    with open(second_file) as sf:
-
-                        for line in sf:
-
-                            if "=" in line:
-
-                                k, v = line.strip().split("=", 1)
-
-                                second[k] = v
-
-                except:
-                    pass
-
-            # =========================
-            # 🔥 MATCH INFO
-            # =========================
-
-            innings_break = len(second) > 0
-
-            team1 = first.get("batting")
-
-            team2 = second.get("batting") or first.get("bowling")
-
-            team2_score = second.get("score", "")
-
-            team2_wickets = second.get("wickets", "")
-
-            team2_over = (
-                f"{second.get('over','0')}."
-                f"{second.get('ball','0')}"
-            )
-
-            if (
-                second.get("over", "0") == "0"
-                and second.get("ball", "0") == "0"
-            ):
-
-                if innings_break:
-
-                    team2_score = "0"
-                    team2_wickets = "0"
-                    team2_over = "0.0"
-
-                else:
-
-                    team2_score = ""
-                    team2_wickets = ""
-                    team2_over = ""
-
-            # =========================
-            # 🔥 RESULT
-            # =========================
-
-            result_text = second.get("match_result", "")
-
-            match_data = {
-
-                "team1": team1,
-
-                "team1_score": first.get("score", "0"),
-
-                "team1_wickets": first.get("wickets", "0"),
-
-                "team1_over":
-                f"{first.get('over','0')}."
-                f"{first.get('ball','0')}",
-
-                "team2": team2,
-
-                "team2_score": team2_score,
-
-                "team2_wickets": team2_wickets,
-
-                "team2_over": team2_over,
-
-                "result": result_text,
-
-                "need_text": second.get("need_text"),
-
-                "toss": first.get("toss"),
-
-                "opt": first.get("opt"),
-
-                "innings_break": innings_break,
-                "file": file,
-            }
-            if file == match2_file:
-                match_data["page"] = "/match-2"
-            else:
-                match_data["page"] = "/match"
-            # =========================
-            # 🔥 LIVE
-            # =========================
-
-            if not result_text:
-
-                match_data["status"] = "LIVE"
-
-                live_matches.append(match_data)
-
-                if len(live_matches) >= 2:
-                    break
-
-            # =========================
-            # 🔥 COMPLETED
-            # =========================
-
-            if result_text and completed_match is None:
-
-                match_data["status"] = "COMPLETED"
-
-                completed_match = match_data
-
-           
-
-       
-
-    except:
-        pass
-
+    live_matches, completed_match = get_home_matches()
     response = render_template(
         "home_live_partial.html",
-        live_matches=live_matches
+        live_matches=live_matches,
+        completed_match=completed_match
     )
 
     home_cache["data"] = response
@@ -1351,11 +1137,15 @@ def match_page():
 
     def find_squad_key(data, team):
 
-        team = team.lower()
+        # space / "_" / "-" jai thak, match korbe (DESERT VIPERS- 24 == DESERT_VIPERS-_24)
+        def norm(x):
+            return x.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        want = norm(team) + "squad"
 
         for k in data.keys():
 
-            if k.lower() == team + "_squad":
+            if norm(k) == want:
                 return k
 
         return team + "_squad"
@@ -1579,11 +1369,15 @@ def match_page_2():
 
     def find_squad_key(data, team):
 
-        team = team.lower()
+        # space / "_" / "-" jai thak, match korbe (DESERT VIPERS- 24 == DESERT_VIPERS-_24)
+        def norm(x):
+            return x.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        want = norm(team) + "squad"
 
         for k in data.keys():
 
-            if k.lower() == team + "_squad":
+            if norm(k) == want:
                 return k
 
         return team + "_squad"
@@ -1737,10 +1531,21 @@ def get_auto_match_status():
 
     for path in ("data/current_match.txt", "data/current_match_2.txt"):
 
-        d = _read_kv(path, {"host", "visitor", "match_result"})
+        d = _read_kv(
+            path,
+            {"host", "visitor", "match_result", "first_match_file", "second_match_file"}
+        )
+
+        # A current-state file can remain after its History match was deleted.
+        # Do not keep showing RUNNING unless its saved match files still exist.
+        linked_match_exists = any(
+            saved and os.path.isfile(saved)
+            for saved in (d.get("first_match_file", ""), d.get("second_match_file", ""))
+        )
 
         if (
-            d.get("host")
+            linked_match_exists
+            and d.get("host")
             and d.get("visitor")
             and not d.get("match_result", "").strip()
         ):
@@ -1759,6 +1564,13 @@ def apply_auto_fixture_status(fixtures):
     from datetime import datetime
 
     completed, running = get_auto_match_status()
+
+    # Status in fixture.txt is only a leftover display value, not the source
+    # of truth. Rebuild it from the existing match files on every load so a
+    # deleted match cannot leave a stale RUNNING/COMPLETED label behind.
+    for fx in fixtures:
+        fx["status"] = ""
+        fx["completed"] = False
 
     if not completed and not running:
         return fixtures
@@ -2223,6 +2035,63 @@ def squad():
 
     return render_template("squad.html", teams=teams)
 
+# ============================================================
+# 🔥 SQUAD EDITOR (Playing XI / Bench / Staff dropdown diye)
+# ============================================================
+import re as _re
+
+SQUAD_ROLES = ["BATSMAN", "BOWLER", "ALL ROUNDER", "WICKET KEEPER", "PLAYER", "COACH"]
+SQUAD_STATUS = {"playing": "Playing XI", "bench": "Bench", "stf": "Staff"}
+
+
+def parse_team_line(line):
+    """'NAME,ROLE' / 'NAME,bench,ROLE' / 'NAME,stf,ROLE' -> dict"""
+    parts = [p.strip() for p in line.strip().split(",")]
+    name = parts[0] if parts else ""
+    status = "playing"
+    role = ""
+    if len(parts) >= 3 and "stf" in parts[1].lower():
+        status, role = "stf", ", ".join(parts[2:])
+    elif len(parts) >= 3 and parts[1].lower() == "bench":
+        status, role = "bench", ", ".join(parts[2:])
+    elif len(parts) >= 2:
+        role = ", ".join(parts[1:])
+    return {"name": name, "status": status, "role": role}
+
+
+def _make_line(name, role, status):
+    if status == "bench":
+        return f"{name},bench,{role or 'PLAYER'}"
+    if status == "stf":
+        return f"{name},stf,{role or 'COACH'}"
+    return f"{name},{role or 'PLAYER'}"
+
+
+def build_team_line(team, name, role, status):
+    """Form theke sothik file line banay. Team-er number (jemon _24) nijei name-er pore boshay."""
+    name = " ".join((name or "").replace(",", " ").split()).upper()
+    role = " ".join((role or "").replace(",", " ").split()).upper()
+
+    m = _re.search(r"(\d+)\s*$", team)
+    if m and name and ("_" + m.group(1)) not in name:
+        name = f"{name}_{m.group(1)}"
+
+    return _make_line(name, role, status)
+
+
+def _append_line(path, line):
+    # file-er shesh-e newline na thakle line jure jay - eta thik kora holo
+    try:
+        with open(path, "r") as f:
+            existing = f.read()
+    except FileNotFoundError:
+        existing = ""
+    with open(path, "a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(line + "\n")
+
+
 @app.route("/squad/<team>")
 def squad_details(team):
 
@@ -2230,35 +2099,99 @@ def squad_details(team):
 
     try:
         with open(f"data/teamlist/{team}.txt", "r") as f:
-            for line in f:
-                line = line.strip()
-
-                if not line:   # 🔥 empty line skip
+            for idx, line in enumerate(f):          # idx = file-er asol line number
+                if not line.strip():
                     continue
-
-                parts = [p.strip() for p in line.split(",")]
-
-                if len(parts) >= 2:
-                    players.append({
-                        "name": parts[0],
-                        "role": ", ".join(parts[1:])
-                    })
-
+                p = parse_team_line(line)
+                p["idx"] = idx
+                players.append(p)
     except Exception as e:
         print("Error:", e)
 
-    return render_template("squad_details.html", team=team, players=players)
+    groups = [
+        ("playing", "Playing XI", [p for p in players if p["status"] == "playing"]),
+        ("bench",   "Bench",      [p for p in players if p["status"] == "bench"]),
+        ("stf",     "Supporting Staff", [p for p in players if p["status"] == "stf"]),
+    ]
+
+    extra_roles = sorted({p["role"] for p in players if p["role"] and p["role"] not in SQUAD_ROLES})
+
+    return render_template(
+        "squad_details.html",
+        team=team,
+        groups=groups,
+        total=len(players),
+        roles=SQUAD_ROLES + extra_roles,
+    )
+
 
 @app.route("/add-player/<team>", methods=["POST"])
 def add_player(team):
 
-    player = request.form.get("player")
+    path = f"data/teamlist/{team}.txt"
 
-    if player:
-        with open(f"data/teamlist/{team}.txt", "a") as f:
-            f.write(player + "\n")
+    name = request.form.get("name")
+
+    if name:                                   # notun form
+        line = build_team_line(
+            team, name, request.form.get("role"), request.form.get("status", "playing")
+        )
+        _append_line(path, line)
+    else:                                      # ager form ("NAME,ROLE" haate lekha)
+        player = request.form.get("player")
+        if player:
+            _append_line(path, player.strip())
 
     return redirect(f"/squad/{team}")
+
+
+@app.route("/edit-player/<team>/<int:index>", methods=["POST"])
+def edit_player(team, index):
+
+    path = f"data/teamlist/{team}.txt"
+
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    name = request.form.get("name")
+    if name:
+        new_line = build_team_line(
+            team, name, request.form.get("role"), request.form.get("status", "playing")
+        )
+    else:
+        new_line = (request.form.get("player") or "").strip()
+
+    if new_line and 0 <= index < len(lines):
+        lines[index] = new_line + "\n"
+
+    with open(path, "w") as f:
+        f.writelines(lines)
+
+    return redirect(f"/squad/{team}")
+
+
+@app.route("/move-player/<team>/<int:index>/<status>")
+def move_player(team, index, status):
+    """Ek click-e Playing / Bench / Staff-e soranor jonno"""
+
+    if status not in SQUAD_STATUS:
+        return redirect(f"/squad/{team}")
+
+    path = f"data/teamlist/{team}.txt"
+
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    if 0 <= index < len(lines) and lines[index].strip():
+        p = parse_team_line(lines[index])
+        # name o role ager moto-i thake, shudhu status bodlay
+        lines[index] = _make_line(p["name"], p["role"], status) + "\n"
+
+    with open(path, "w") as f:
+        f.writelines(lines)
+
+    return redirect(f"/squad/{team}")
+
 
 @app.route("/delete-player/<team>/<int:index>")
 def delete_player(team, index):
@@ -2270,24 +2203,6 @@ def delete_player(team, index):
 
     if 0 <= index < len(lines):
         lines.pop(index)
-
-    with open(path, "w") as f:
-        f.writelines(lines)
-
-    return redirect(f"/squad/{team}")
-
-@app.route("/edit-player/<team>/<int:index>", methods=["POST"])
-def edit_player(team, index):
-
-    new_data = request.form.get("player")
-
-    path = f"data/teamlist/{team}.txt"
-
-    with open(path, "r") as f:
-        lines = f.readlines()
-
-    if 0 <= index < len(lines):
-        lines[index] = new_data + "\n"
 
     with open(path, "w") as f:
         f.writelines(lines)
@@ -3030,6 +2945,7 @@ def save_match():
     # 🔥 MATCH DATA
     match_data = {
 
+        "scoring_engine": "1",
         "host": host,
         "visitor": visitor,
 
@@ -3089,6 +3005,7 @@ def save_match():
 
     # 🔥 SAFE SAVE
     safe_write("data/current_match.txt", match_data)
+    safe_write(first_file, match_data)
 
     # 🔥 RESET HOME LOCK
     try:
@@ -3204,6 +3121,7 @@ def save_match_2():
     # 🔥 MATCH DATA
     match_data = {
 
+        "scoring_engine": "2",
         "host": host,
         "visitor": visitor,
 
@@ -3262,6 +3180,7 @@ def save_match_2():
 
     # 🔥 SAFE SAVE
     safe_write("data/current_match_2.txt", match_data)
+    safe_write(first_file, match_data)
 
     # 🔥 RESET HOME LOCK
     try:
@@ -5262,7 +5181,9 @@ def undo_2():
 
         print("UNDO ERROR:", e)
 
-    return redirect("/live-match-2")
+    # Re-check the restored score after Undo. If the restored state still
+    # satisfies the match-ending condition, live_match_2 will reopen Result Modal.
+    return redirect("/live-match-2?checkResult=1")
 
 @app.route("/start-second")
 @locked(1)
@@ -5522,6 +5443,27 @@ def save_result_2():
     return "OK"
 
 
+def detect_match_engine(file, first, second):
+    """Return scoring engine for a saved match, including the latest legacy Match 2."""
+    marker = second.get("scoring_engine") or first.get("scoring_engine")
+    if marker in ("1", "2"):
+        return marker
+    try:
+        with open("data/history_2.txt", encoding="utf-8") as hf:
+            lines = [x.strip() for x in hf if x.strip()]
+        if lines:
+            state = dict(x.split("=", 1) for x in lines[-1].split(";;") if "=" in x)
+            base = file[:-8] if file.endswith("_1st.txt") else file
+            expected_first = os.path.join("data", "all_match", base + "_1st.txt")
+            expected_second = os.path.join("data", "all_match", base + "_2nd.txt")
+            if (state.get("first_match_file") == expected_first
+                    or state.get("second_match_file") == expected_second):
+                return "2"
+    except Exception:
+        pass
+    return "1"
+
+
 @app.route("/history")
 def history():
 
@@ -5621,6 +5563,7 @@ def history():
 
             "date": match_time,
             "match_number": first.get("match_number", "0"),
+            "engine": detect_match_engine(file, first, second),
             # 🔥 IMPORTANT
             "file": file
         }
@@ -5747,6 +5690,7 @@ def history_data():
 
             "date": match_time,
             "match_number": first.get("match_number", "0"),
+            "engine": detect_match_engine(file, first, second),
             # 🔥 IMPORTANT
             "file": file
         }
@@ -5798,53 +5742,98 @@ def delete_match(filename):
         os.remove(second_file)
 
     return redirect("/history")
-@app.route("/resume-match/<file>")
-def resume_match(file):
-
-    import shutil
+def _resume_match_file(file, engine):
+    """Restore a saved match into the matching scoring engine's state/history files."""
     import os
 
-    first_file = f"data/all_match/{file}_1st.txt"
-    second_file = f"data/all_match/{file}_2nd.txt"
+    # Reject path traversal and accept only the generated match basename.
+    if not file or os.path.basename(file) != file or "\\" in file or "/" in file:
+        return "Invalid match file", 400
 
-    target = "data/current_match.txt"
+    # History stores the actual *_1st.txt filename, not the bare match basename.
+    # Accept either form so old direct links remain compatible.
+    base = file
+    if base.endswith("_1st.txt"):
+        base = base[:-8]
+    elif base.endswith("_2nd.txt"):
+        base = base[:-8]
+    first_file = os.path.join("data", "all_match", f"{base}_1st.txt")
+    second_file = os.path.join("data", "all_match", f"{base}_2nd.txt")
+    if not os.path.exists(first_file):
+        return "Match not found", 404
 
     try:
-
         data = {}
-
-        # 🔥 LOAD FIRST INNINGS
-        if os.path.exists(first_file):
-
-            with open(first_file) as f:
-
+        for source in (first_file, second_file):
+            if not os.path.exists(source):
+                continue
+            with open(source, encoding="utf-8") as f:
                 for line in f:
-
                     if "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        data[k] = v
+                        key, value = line.rstrip("\n").split("=", 1)
+                        data[key] = value
 
-        # 🔥 LOAD SECOND INNINGS
-        if os.path.exists(second_file):
+        # The marker is authoritative. The route also enforces the requested engine.
+        saved_engine = str(data.get("scoring_engine", ""))
+        if not saved_engine:
+            # Legacy records created before scoring_engine was added: recognize the
+            # match if it is the one whose Match 2 undo timeline is still present.
+            try:
+                with open("data/history_2.txt", encoding="utf-8") as hf:
+                    old_lines = [x.strip() for x in hf if x.strip()]
+                if old_lines:
+                    old_last = dict(x.split("=", 1) for x in old_lines[-1].split(";;") if "=" in x)
+                    if (old_last.get("first_match_file") == first_file
+                            or old_last.get("second_match_file") == second_file):
+                        saved_engine = "2"
+            except Exception:
+                pass
+        if not saved_engine:
+            saved_engine = "1"
+        if saved_engine != str(engine):
+            return ("This match belongs to New Match " + saved_engine + ". "
+                    "Please use its matching Resume action."), 409
 
-            with open(second_file) as f:
+        data["scoring_engine"] = str(engine)
+        current_path = "data/current_match_2.txt" if engine == 2 else "data/current_match.txt"
+        history_path = "data/history_2.txt" if engine == 2 else "data/history.txt"
+        safe_write(current_path, data)
 
-                for line in f:
+        # Do not mix another match's undo timeline into this resumed match.
+        # Keep any existing timeline only if its last snapshot belongs to this match.
+        keep_history = False
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, encoding="utf-8") as hf:
+                    history_lines = [x.strip() for x in hf if x.strip()]
+                if history_lines:
+                    latest = dict(x.split("=", 1) for x in history_lines[-1].split(";;") if "=" in x)
+                    keep_history = (latest.get("first_match_file") == first_file
+                                    or latest.get("second_match_file") == second_file)
+            except Exception:
+                keep_history = False
+        if not keep_history:
+            with open(history_path, "w", encoding="utf-8") as hf:
+                hf.write(history_line(data) + "\n")
 
-                    if "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        data[k] = v
-
-        # 🔥 SAVE CURRENT MATCH
-        safe_write(target, data)
+        # Keep the selected innings file in sync with the restored state.
+        innings_file = data.get("first_match_file") if data.get("innings", "1") == "1" else data.get("second_match_file")
+        if innings_file:
+            safe_write(innings_file, data)
 
     except Exception as e:
-
         print("RESUME ERROR:", e)
+        return "Resume failed", 500
 
-        return "Resume failed"
+    return redirect("/live-match-2" if engine == 2 else "/live-match")
 
-    return redirect("/live-match")
+@app.route("/resume-match/<file>")
+def resume_match(file):
+    return _resume_match_file(file, 1)
+
+@app.route("/resume-match-2/<file>")
+def resume_match_2(file):
+    return _resume_match_file(file, 2)
 
 @app.route("/save-wicket", methods=["POST"])
 @locked(1)

@@ -5,6 +5,7 @@
 <title>Comments Manage</title>
     <link rel="stylesheet"href="{{ url_for('static',filename='css/style.css') }}">
     <meta name="viewport"content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
 </head>
 
 <body>
@@ -118,5 +119,6 @@ fetch("/heartbeat")
 
 </script>
 
+    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
 </body>
 </html>
