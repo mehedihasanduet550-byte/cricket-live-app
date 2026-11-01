@@ -153,55 +153,12 @@
         <div>NRR</div>
     </div>
 
-    <!-- GROUP A -->
-    <div class="group-title">Group A</div>
+    {% for g in groups %}
 
-    {% for t in group_a %}
-    <div class="points-row {% if t.top %}top-team{% endif %}">
-        <div class="team">
-            <img loading="lazy"src="{{ url_for('static', filename='images/teams/' + t.team + '.webp') }}">
-            {{ t.team }}
-        </div>
+    <!-- {{ g.title }} -->
+    <div class="group-title">{{ g.title }}</div>
 
-        <div>{{ t.p }}</div>
-        <div>{{ t.w }}</div>
-        <div>{{ t.l }}</div>
-        <div>{{ t.nr }}</div>
-        <div>{{ t.pts }}</div>
-        <div>{{ t.nrr }}</div>
-    </div>
-    {% endfor %}
-    <div class="group-title"style="background: linear-gradient(90deg, #d32f2f, #cb2323, #ea0748); color:white; ">Eliminated A</div>
-
-        {% for t in eliminated_a %}
-
-        <div class="points-row">
-
-            <div class="team">
-
-                <img loading="lazy" src="{{ url_for(
-                'static',
-                filename='images/teams/' + t.team + '.webp'
-                ) }}">
-
-                {{ t.team }}
-
-            </div>
-
-            <div>{{ t.p }}</div>
-            <div>{{ t.w }}</div>
-            <div>{{ t.l }}</div>
-            <div>{{ t.nr }}</div>
-            <div>{{ t.pts }}</div>
-            <div>{{ t.nrr }}</div>
-
-        </div>
-
-        {% endfor %}
-    <!-- GROUP B -->
-    <div class="group-title">Group B</div>
-
-    {% for t in group_b %}
+    {% for t in g.teams %}
     <div class="points-row {% if t.top %}top-team{% endif %}">
         <div class="team">
             <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + t.team + '.webp') }}">
@@ -216,33 +173,27 @@
         <div>{{ t.nrr }}</div>
     </div>
     {% endfor %}
-    <div class="group-title"style="background: linear-gradient(90deg, #d32f2f, #cb2323, #ea0748); color:white; ">Eliminated B</div>
-        {% for t in eliminated_b %}
 
-        <div class="points-row">
+    <div class="group-title" style="background: linear-gradient(90deg, #d32f2f, #cb2323, #ea0748); color:white;">Eliminated {{ g.key|upper }}</div>
 
-            <div class="team">
-
-                <img loading="lazy" src="{{ url_for(
-                'static',
-                filename='images/teams/' + t.team + '.webp'
-                ) }}">
-
-                {{ t.team }}
-
-            </div>
-
-            <div>{{ t.p }}</div>
-            <div>{{ t.w }}</div>
-            <div>{{ t.l }}</div>
-            <div>{{ t.nr }}</div>
-            <div>{{ t.pts }}</div>
-            <div>{{ t.nrr }}</div>
-
+    {% for t in g.eliminated %}
+    <div class="points-row">
+        <div class="team">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + t.team + '.webp') }}">
+            {{ t.team }}
         </div>
 
-        {% endfor %}
-        
+        <div>{{ t.p }}</div>
+        <div>{{ t.w }}</div>
+        <div>{{ t.l }}</div>
+        <div>{{ t.nr }}</div>
+        <div>{{ t.pts }}</div>
+        <div>{{ t.nrr }}</div>
+    </div>
+    {% endfor %}
+
+    {% endfor %}
+
 </div>
 <script>
 

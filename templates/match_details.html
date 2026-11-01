@@ -630,10 +630,10 @@
                     <div class="over-ball
                     {% if b == '4' %} four
                     {% elif b == '6' %} six
-                    {% elif b == 'W' %} wicket
-                    {% endif %}
+                    {% elif b == 'W' or b.startswith('W+') %} wicket
+                    {% endif %}{% if b.startswith('W+') %} has-extra{% endif %}
                     ">
-                        {{ b }}
+                        {% if b.startswith('W+') %}W<span class="sub-extra">{{ b[2:] }}</span>{% else %}{{ b }}{% endif %}
                     </div>
 
                 {% endfor %}
@@ -670,10 +670,10 @@
                 <div class="over-ball
                 {% if b == '4' %} four
                 {% elif b == '6' %} six
-                {% elif b == 'W' %} wicket
-                {% endif %}
+                {% elif b == 'W' or b.startswith('W+') %} wicket
+                {% endif %}{% if b.startswith('W+') %} has-extra{% endif %}
                 ">
-                    {{ b }}
+                    {% if b.startswith('W+') %}W<span class="sub-extra">{{ b[2:] }}</span>{% else %}{{ b }}{% endif %}
                 </div>
 
             {% endfor %}
@@ -729,10 +729,10 @@
                     <div class="over-ball
                     {% if b == '4' %} four
                     {% elif b == '6' %} six
-                    {% elif b == 'W' %} wicket
-                    {% endif %}
+                    {% elif b == 'W' or b.startswith('W+') %} wicket
+                    {% endif %}{% if b.startswith('W+') %} has-extra{% endif %}
                     ">
-                        {{ b }}
+                        {% if b.startswith('W+') %}W<span class="sub-extra">{{ b[2:] }}</span>{% else %}{{ b }}{% endif %}
                     </div>
 
                 {% endfor %}
@@ -769,10 +769,10 @@
                 <div class="over-ball
                 {% if b == '4' %} four
                 {% elif b == '6' %} six
-                {% elif b == 'W' %} wicket
-                {% endif %}
+                {% elif b == 'W' or b.startswith('W+') %} wicket
+                {% endif %}{% if b.startswith('W+') %} has-extra{% endif %}
                 ">
-                    {{ b }}
+                    {% if b.startswith('W+') %}W<span class="sub-extra">{{ b[2:] }}</span>{% else %}{{ b }}{% endif %}
                 </div>
 
             {% endfor %}

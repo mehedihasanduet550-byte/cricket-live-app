@@ -73,7 +73,7 @@
                         <div style="display:flex;gap:8px;overflow-x:auto;">
                             {% for ball in ov.split(',') if ball.strip() %}
                                 {% set b = '0' if ball.strip() == '.' else ball.strip() %}
-                                <div class="over-ball{% if b == '4' %} four{% elif b == '6' %} six{% elif b|upper == 'W' %} wicket{% endif %}">{{ b }}</div>
+                                <div class="over-ball{% if b == '4' %} four{% elif b == '6' %} six{% elif b|upper == 'W' or b.startswith('W+') %} wicket{% endif %}{% if b.startswith('W+') %} has-extra{% endif %}">{% if b.startswith('W+') %}W<span class="sub-extra">{{ b[2:] }}</span>{% else %}{{ b }}{% endif %}</div>
                             {% endfor %}
                         </div>
                     </div>
@@ -84,7 +84,7 @@
                         <div style="display:flex;gap:8px;overflow-x:auto;">
                             {% for ball in running.split(',') if ball.strip() %}
                                 {% set b = '0' if ball.strip() == '.' else ball.strip() %}
-                                <div class="over-ball{% if b == '4' %} four{% elif b == '6' %} six{% elif b|upper == 'W' %} wicket{% endif %}">{{ b }}</div>
+                                <div class="over-ball{% if b == '4' %} four{% elif b == '6' %} six{% elif b|upper == 'W' or b.startswith('W+') %} wicket{% endif %}{% if b.startswith('W+') %} has-extra{% endif %}">{% if b.startswith('W+') %}W<span class="sub-extra">{{ b[2:] }}</span>{% else %}{{ b }}{% endif %}</div>
                             {% endfor %}
                         </div>
                     </div>

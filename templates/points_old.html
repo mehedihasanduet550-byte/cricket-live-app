@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Points Table</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body{
+            margin:0;
+            font-family: Arial;
+            background: linear-gradient(135deg, #1d2b64, #f8cdda);
+        }
+
+        .nav {
+            display: flex;
+            overflow-x: auto;
+            white-space: nowrap;
+            background: linear-gradient(45deg, #4facfe, #00f2fe, #43e97b);
+            /*background: linear-gradient(45deg, #667eea, #764ba2);*/
+            overflow-y: visible;
+            scrollbar-width: none;
+        }
+
+        .nav::-webkit-scrollbar {
+            display: none;
+        }
+
+        .nav a{
+            flex:1;
+            padding:10px;
+            text-align:center;
+            text-decoration:none;
+            color:black;
+            font-weight:bold;
+            border-right: 1px solid rgba(255,255,255,0.4);
+        }
+
+        /* TITLE */
+        .title{
+            text-align:center;
+            margin:15px;
+            font-size:22px;
+            font-weight:bold;
+            color:white;
+        }
+
+        /* WRAPPER */
+        .table-box{
+            margin:10px;
+        }
+
+        /* HEADER */
+        .points-header{
+            display:grid;
+            grid-template-columns: 2.5fr repeat(6, 1fr);
+            padding:12px;
+            background: linear-gradient(90deg, #ff2f2f, #dd2476, #1fa2ff);
+            color:white;
+            font-weight:bold;
+            border-radius:12px;
+            text-align:center;
+        }
+
+        .points-header div:first-child{
+            text-align:left;
+            padding-left:10px;
+        }
+
+        /* GROUP TITLE */
+        .group-title{
+            margin:10px 0;
+            padding:8px;
+            text-align:center;
+            font-weight:bold;
+            color:black;
+            background: linear-gradient(45deg, #43e97b, #38f9d7, #00c6ff);
+            border-radius:8px;
+        }
+
+        /* ROW */
+        .points-row{
+            display:grid;
+            grid-template-columns: 2.5fr repeat(6, 1fr);
+            padding:10px;
+            margin:6px 0;
+            background: rgba(255,255,255,0.08);
+            border-radius:10px;
+            color:white;
+            align-items:center;
+            text-align:center;
+        }
+
+        /* TEAM */
+        .team{
+            display:flex;
+            align-items:center;
+            gap:10px;
+            text-align:left;
+        }
+
+        .team img{
+            width:28px;
+            height:28px;
+            border-radius:50%;
+        }
+
+        /* HOVER */
+        .points-row:hover{
+            background: rgba(0,150,255,0.25);
+        }
+
+        /* MOBILE */
+        @media(max-width:768px){
+            .points-header,
+            .points-row{
+                font-size:11px;
+                padding:8px;
+            }
+        }
+        .top-team{
+           
+            font-weight: bold;
+            border-left: 5px solid gold;
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+</head>
+
+<body>
+
+<!-- NAV -->
+<div class="nav">
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+</div>
+
+<div class="title">Points Table</div>
+
+<div class="table-box">
+
+    <!-- HEADER -->
+    <div class="points-header">
+        <div>Team</div>
+        <div>P</div>
+        <div>W</div>
+        <div>L</div>
+        <div>NR</div>
+        <div>PTS</div>
+        <div>NRR</div>
+    </div>
+
+    <!-- GROUP A -->
+    <div class="group-title">Group A</div>
+
+    {% for t in group_a %}
+    <div class="points-row {% if t.top %}top-team{% endif %}">
+        <div class="team">
+            <img loading="lazy"src="{{ url_for('static', filename='images/teams/' + t.team + '.webp') }}">
+            {{ t.team }}
+        </div>
+
+        <div>{{ t.p }}</div>
+        <div>{{ t.w }}</div>
+        <div>{{ t.l }}</div>
+        <div>{{ t.nr }}</div>
+        <div>{{ t.pts }}</div>
+        <div>{{ t.nrr }}</div>
+    </div>
+    {% endfor %}
+    <div class="group-title"style="background: linear-gradient(90deg, #d32f2f, #cb2323, #ea0748); color:white; ">Eliminated A</div>
+
+        {% for t in eliminated_a %}
+
+        <div class="points-row">
+
+            <div class="team">
+
+                <img loading="lazy" src="{{ url_for(
+                'static',
+                filename='images/teams/' + t.team + '.webp'
+                ) }}">
+
+                {{ t.team }}
+
+            </div>
+
+            <div>{{ t.p }}</div>
+            <div>{{ t.w }}</div>
+            <div>{{ t.l }}</div>
+            <div>{{ t.nr }}</div>
+            <div>{{ t.pts }}</div>
+            <div>{{ t.nrr }}</div>
+
+        </div>
+
+        {% endfor %}
+    <!-- GROUP B -->
+    <div class="group-title">Group B</div>
+
+    {% for t in group_b %}
+    <div class="points-row {% if t.top %}top-team{% endif %}">
+        <div class="team">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + t.team + '.webp') }}">
+            {{ t.team }}
+        </div>
+
+        <div>{{ t.p }}</div>
+        <div>{{ t.w }}</div>
+        <div>{{ t.l }}</div>
+        <div>{{ t.nr }}</div>
+        <div>{{ t.pts }}</div>
+        <div>{{ t.nrr }}</div>
+    </div>
+    {% endfor %}
+    <div class="group-title"style="background: linear-gradient(90deg, #d32f2f, #cb2323, #ea0748); color:white; ">Eliminated B</div>
+        {% for t in eliminated_b %}
+
+        <div class="points-row">
+
+            <div class="team">
+
+                <img loading="lazy" src="{{ url_for(
+                'static',
+                filename='images/teams/' + t.team + '.webp'
+                ) }}">
+
+                {{ t.team }}
+
+            </div>
+
+            <div>{{ t.p }}</div>
+            <div>{{ t.w }}</div>
+            <div>{{ t.l }}</div>
+            <div>{{ t.nr }}</div>
+            <div>{{ t.pts }}</div>
+            <div>{{ t.nrr }}</div>
+
+        </div>
+
+        {% endfor %}
+        
+</div>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+</body>
+</html>

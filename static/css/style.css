@@ -2223,3 +2223,15 @@ input {
     text-align: left;
     padding-left: 35px;
 }
+
+/* wide / no-ball + wicket = ONE ball: red W with the extra (NB, 2NB, WD...) shown below it */
+.over-ball.has-extra, .ball-box.has-extra{
+    flex-direction:column;
+    line-height:1;
+    gap:1px;
+}
+.sub-extra{
+    font-size:8px;
+    font-weight:normal;
+    line-height:1;
+}

@@ -52,7 +52,9 @@
     if (i.wicket) {
       s.wickets++;
       s.fow.push({ player: s.striker, run: s.score, wicket: s.wickets, over: s.over + "." + s.ball });
-      s.thisOver.push(out.legal ? (r ? r + "W" : "W") : label, ...(out.legal ? [] : ["W"]));
+      // legal ball: "W" / "2W". Wide or no-ball + wicket is still ONE ball in the over,
+      // stored as "W+<extra>" (e.g. "W+NB", "W+2NB", "W+WD"): circle shows W, small text below shows the extra.
+      s.thisOver.push(out.legal ? (r ? r + "W" : "W") : "W+" + label);
     } else {
       s.thisOver.push(label);
       if (r % 2 === 1) swap(s);

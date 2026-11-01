@@ -2,12 +2,33 @@
 <html>
 <head>
     <title>Group</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+    <style>
+        .sq-form { display:flex; flex-wrap:wrap; gap:8px; width:100%; align-items:center; }
+        .sq-form select, .sq-form input.new-group {
+            flex:1 1 150px; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.3);
+            background:rgba(0,0,0,0.35); color:white; font-size:14px; min-width:0;
+        }
+        .sq-form input.new-group { flex:1 1 120px; }
+        .sq-form input.new-group::placeholder { color:rgba(255,255,255,0.6); }
+        .sq-form select option { color:black; }
+        .sq-group { display:flex; justify-content:space-between; }
+        .sq-group small { opacity:.8; }
+        .sq-left { display:flex; flex-direction:column; gap:3px; align-items:flex-start; text-align:left; }
+        .sq-name { font-weight:bold; }
+        .sq-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start; }
+        .player-row { flex-wrap:wrap; gap:8px; }
+        .sq-actions a, .sq-actions button {
+            padding:5px 10px; border:none; border-radius:6px; color:white; cursor:pointer;
+            font-size:12px; text-decoration:none; display:inline-block;
+        }
+        .mv-g { background:#1e88e5; }
+        .sq-empty { text-align:center; padding:10px; opacity:.8; }
+    </style>
 </head>
 <body>
-
 
 <!-- 🔥 Navigation -->
 <div class="nav">
@@ -18,35 +39,70 @@
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
-    
 </div>
-<h2 class="fixture-title">Group</h2>
 
-<!-- 🔥 ADD -->
+<h2 class="fixture-title">Group <small>({{ total }} teams, {{ groups|length }} groups)</small></h2>
+
+<!-- 🔥 ADD TEAM -->
+<div class="team-card row-card center-card">
+    <div>➕ Add Team to Group</div>
+</div>
+
 <form action="/add-group-team" method="POST">
-<div class="team-card row-card add-box">
-    <input type="text" name="team" placeholder="Team name,group (a/b)" required>
-    <button type="submit">Add</button>
+<div class="team-card row-card add-box" style="flex-wrap:wrap;">
+    <div class="sq-form">
+
+        <select name="team" title="Team" required>
+            {% if not available %}
+            <option value="">All teams are grouped</option>
+            {% else %}
+            <option value="" disabled selected>Select Team</option>
+            {% for t in available %}
+            <option value="{{ t }}">{{ t }}</option>
+            {% endfor %}
+            {% endif %}
+        </select>
+
+        <select name="group" title="Group" onchange="syncNew(this)">
+            {% for k in group_keys %}
+            <option value="{{ k }}">Group {{ k|upper }}</option>
+            {% endfor %}
+            <option value="__new__" {% if not group_keys %}selected{% endif %}>➕ Notun group</option>
+        </select>
+
+        <input type="text" name="new_group" class="new-group" maxlength="20"
+               placeholder="Group nam (khali rakhle auto)" autocomplete="off" style="display:none;">
+
+        <button type="submit" {% if not available %}disabled{% endif %}>Add</button>
+    </div>
 </div>
 </form>
 
-<!-- 🔥 LIST -->
-{% for t in teams %}
+<!-- 🔥 LIST (protita group alada) -->
+{% for key, title, items in groups %}
+
+<div class="team-card row-card center-card">
+    <div class="sq-group">{{ title }} &nbsp;<small>({{ items|length }})</small></div>
+</div>
+
+{% for t in items %}
 <div class="team-card row-card player-row">
 
-    <div class="left">
-        {{ loop.index }}. {{ t.name }} , {{ t.group }}
+    <div class="sq-left">
+        <div class="sq-name">{{ loop.index }}. {{ t.name }}</div>
     </div>
 
-    <div class="right actions">
+    <div class="sq-actions">
 
-        <!-- EDIT -->
-        <button type="button"
-        onclick="openEdit({{loop.index0}}, `{{t.name}},{{t.group}}`)"
-        class="edit-btn">Edit</button>
+        {% for k in group_keys %}{% if k != key %}<a class="mv-g" href="/move-group-team/{{ t.idx }}/{{ k|urlencode }}">→ Group {{ k|upper }}</a>{% endif %}{% endfor %}
 
-        <!-- DELETE -->
-        <a href="/delete-group-team/{{loop.index0}}"
+        <button type="button" class="edit-btn"
+            data-index="{{ t.idx }}"
+            data-name="{{ t.name }}"
+            data-group="{{ t.group }}"
+            onclick="openEdit(this)">Edit</button>
+
+        <a href="/delete-group-team/{{ t.idx }}"
            onclick="return confirm('Delete?')"
            class="delete-btn">Delete</a>
 
@@ -55,25 +111,79 @@
 </div>
 {% endfor %}
 
-<!-- 🔥 MODAL -->
+{% endfor %}
+
+{% if not groups %}
+<div class="sq-empty">"No teams available. Add a team from the top, and create a group here as well."</div>
+{% endif %}
+
+
+<!-- 🔥 EDIT MODAL -->
 <div id="editModal" class="modal">
-    <div class="team-card row-card add-box">
-        <form id="editForm" method="POST">
-            <input type="text" name="team" id="editInput" required>
-            <button type="submit">Update</button>
+
+    <div class="team-card row-card add-box" style="width:95%; max-width:900px;">
+
+        <form id="editForm" method="POST" class="sq-form">
+
+            <select name="team" id="editTeam">
+                {% for t in all_teams %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+            </select>
+
+            <select name="group" id="editGroup" onchange="syncNew(this)">
+                {% for k in group_keys %}
+                <option value="{{ k }}">Group {{ k|upper }}</option>
+                {% endfor %}
+                <option value="__new__">➕ Notun group</option>
+            </select>
+
+            <input type="text" name="new_group" class="new-group" maxlength="20"
+                   placeholder="Group nam (khali rakhle auto)" autocomplete="off" style="display:none;">
+
+            <button type="submit" style="min-width:100px;">Update</button>
+
         </form>
+
     </div>
+
 </div>
 
 <script>
-function openEdit(index, value) {
+const NEXT_GROUP = {{ next_group|tojson }};
+
+// "Notun group" select korle nam-er box dekhai (auto next letter diye bhora)
+function syncNew(sel) {
+    const box = sel.closest("form").querySelector(".new-group");
+    const isNew = sel.value === "__new__";
+    box.style.display = isNew ? "" : "none";
+    if (isNew && !box.value) box.value = NEXT_GROUP;
+}
+
+document.querySelectorAll('select[name="group"]').forEach(syncNew);
+
+function openEdit(btn) {
 
     const modal = document.getElementById("editModal");
-    const input = document.getElementById("editInput");
+    const team = document.getElementById("editTeam");
+    const group = document.getElementById("editGroup");
     const form = document.getElementById("editForm");
 
-    input.value = value;
-    form.action = "/edit-group-team/" + index;
+    // team list-e na thakle (jemon rename hoye gese) add kore nei
+    const name = btn.dataset.name;
+    if (name && ![...team.options].some(o => o.value === name)) {
+        team.add(new Option(name, name));
+    }
+    team.value = name;
+
+    const g = btn.dataset.group;
+    if (g && ![...group.options].some(o => o.value === g)) {
+        group.add(new Option("Group " + g.toUpperCase(), g), 0);
+    }
+    group.value = g;
+    syncNew(group);
+
+    form.action = "/edit-group-team/" + btn.dataset.index;
 
     modal.classList.add("show");
 }

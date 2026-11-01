@@ -1708,17 +1708,21 @@ def load_fixtures():
     return apply_auto_fixture_status(fixtures)
 
 def get_final_teams():
+    """Prottek group-er top team. Final-er jonno prothom 2 ta group (a, b ...) er top team nei."""
 
     import os
 
-    group_a = []
-    group_b = []
+    groups = {}
 
     try:
         with open("data/teamnamePoints.txt") as f:
             for line in f:
 
-                team, group = [x.strip() for x in line.split(",")]
+                parts = [x.strip() for x in line.strip().split(",")]
+                if len(parts) != 2 or not parts[0]:
+                    continue
+
+                team, group = parts[0], parts[1].lower()
 
                 path = f"data/match_result/{team}.txt"
 
@@ -1727,7 +1731,9 @@ def get_final_teams():
                 if os.path.exists(path):
                     with open(path) as tf:
                         for l in tf:
-                            k,v = l.strip().split("=")
+                            if "=" not in l:
+                                continue
+                            k, v = l.strip().split("=")
                             if k == "matches": matches = int(v)
                             elif k == "won": won = int(v)
                             elif k == "lost": lost = int(v)
@@ -1741,7 +1747,7 @@ def get_final_teams():
                         data = {}
                         for l in nf:
                             if "=" in l:
-                                k,v = l.strip().split("=")
+                                k, v = l.strip().split("=")
                                 data[k] = float(v)
 
                         try:
@@ -1751,27 +1757,24 @@ def get_final_teams():
                         except:
                             nrr = 0
 
-                obj = {
+                groups.setdefault(group, []).append({
                     "team": team,
                     "pts": won * 2 + max(0, matches - won - lost),
                     "w": won,
                     "nrr": nrr
-                }
-
-                if group.lower() == "a":
-                    group_a.append(obj)
-                else:
-                    group_b.append(obj)
+                })
 
     except:
         pass
 
-    # 🔥 SORT
-    group_a.sort(key=lambda x: (x["pts"], x["nrr"]), reverse=True)
-    group_b.sort(key=lambda x: (x["pts"], x["nrr"]), reverse=True)
+    # 🔥 SORT + prottek group-er top team
+    tops = []
+    for g in sorted(groups, key=lambda k: (len(k), k)):
+        groups[g].sort(key=lambda x: (x["pts"], x["nrr"]), reverse=True)
+        tops.append(groups[g][0]["team"])
 
-    team_a = group_a[0]["team"] if group_a else None
-    team_b = group_b[0]["team"] if group_b else None
+    team_a = tops[0] if len(tops) > 0 else None
+    team_b = tops[1] if len(tops) > 1 else None
 
     return team_a, team_b
 
@@ -2319,68 +2322,166 @@ def rename_team_logo():
 
     return "OK"
 
+def _clean_group(value):
+    """Group-er nam: chhoto hater, space -> '-', shudhu a-z 0-9 _ - (max 20)."""
+    import re
+    g = (value or "").strip().lower().replace(" ", "-")
+    g = re.sub(r"[^a-z0-9_-]", "", g)
+    return g[:20]
+
+
+MIN_GROUPS = ["a", "b", "c", "d"]   # dropdown-e egulo shobsomoy thakbe (aro lagle "Notun group")
+
+
+def _group_sort_key(g):
+    return (len(g), g)          # a, b, c ... z, tarpor 10, 11 ...
+
+
+def _next_group_key(existing):
+    """Ekhono byabohar hoyni emon proth(om) group: a, b, c ... tarpor 1, 2, 3"""
+    import string
+    for c in string.ascii_lowercase:
+        if c not in existing:
+            return c
+    n = 1
+    while str(n) in existing:
+        n += 1
+    return str(n)
+
+
+def _read_group_entries():
+    """data/teamnamePoints.txt -> [{idx, name, group}]. idx = file-er asol line number,
+    tai blank/vul line thakleo Edit / Delete / Move shothik line-e kaj kore."""
+    entries = []
+    try:
+        with open("data/teamnamePoints.txt", "r", encoding="utf-8") as f:
+            for idx, line in enumerate(f):
+                parts = [p.strip() for p in line.strip().split(",")]
+                if len(parts) == 2 and parts[0]:
+                    entries.append({"idx": idx, "name": parts[0], "group": parts[1].lower()})
+    except Exception:
+        pass
+    return entries
+
+
+def _group_line(team, group):
+    team = " ".join((team or "").replace(",", " ").split())
+    return f"{team},{group}"
+
+
+def _resolve_group(form, existing):
+    """Form theke group ber kore. '__new__' hole notun group: nam likhle sheta, na likhle
+    porer letter (c, d, e ...) auto."""
+    g = (form.get("group") or "").strip()
+    if g == "__new__":
+        g = _clean_group(form.get("new_group")) or _next_group_key(existing)
+    else:
+        g = _clean_group(g)
+    return g
+
+
 @app.route("/group")
 def group_page():
 
-    teams = []
+    entries = _read_group_entries()
 
-    try:
-        with open("data/teamnamePoints.txt", "r") as f:
-            for line in f:
-                parts = [p.strip() for p in line.strip().split(",")]
+    keys = sorted({e["group"] for e in entries}, key=_group_sort_key)
 
-                if len(parts) == 2:
-                    teams.append({
-                        "name": parts[0],
-                        "group": parts[1]
-                    })
+    groups = [
+        (k, ("Group " + k.upper()) if k else "No group", sorted([e for e in entries if e["group"] == k], key=lambda e: e["name"].lower()))
+        for k in keys
+    ]
 
-    except:
-        pass
+    # jei team already kono group e ache, tader dropdown e ar dekhabo na
+    used = {_norm_team(e["name"]) for e in entries}
+    available = sorted(t for t in load_teams() if _norm_team(t) not in used)
 
-    return render_template("group.html", teams=teams)
+    # dropdown-e shobsomoy minimum 4 ta group (a, b, c, d) thakbe, khali thakleo
+    dropdown_keys = sorted({k for k in keys if k} | set(MIN_GROUPS), key=_group_sort_key)
+
+    return render_template(
+        "group.html",
+        groups=groups,
+        total=len(entries),
+        available=available,
+        all_teams=sorted(load_teams()),
+        group_keys=dropdown_keys,
+        next_group=_next_group_key(set(dropdown_keys)),
+    )
+
 
 @app.route("/add-group-team", methods=["POST"])
 def add_group_team():
 
-    data = request.form.get("team")
+    path = "data/teamnamePoints.txt"
 
-    if data:
-        with open("data/teamnamePoints.txt", "a") as f:
-            f.write(data + "\n")
+    team = (request.form.get("team") or "").strip()
+
+    if team and request.form.get("group"):   # notun dropdown form
+        entries = _read_group_entries()
+        group = _resolve_group(request.form, {e["group"] for e in entries})
+        already = {_norm_team(e["name"]) for e in entries}
+        if group and _norm_team(team) not in already:
+            _append_line(path, _group_line(team, group))
+    elif team:                               # ager form ("Team,a" haate lekha)
+        _append_line(path, team)
 
     return redirect("/group")
+
+
+@app.route("/edit-group-team/<int:index>", methods=["POST"])
+def edit_group_team(index):
+
+    path = "data/teamnamePoints.txt"
+
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    team = (request.form.get("team") or "").strip()
+    group = _resolve_group(request.form, {e["group"] for e in _read_group_entries()})
+
+    if team and group and 0 <= index < len(lines):
+        lines[index] = _group_line(team, group) + "\n"
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+    return redirect("/group")
+
+
+@app.route("/move-group-team/<int:index>/<group>")
+def move_group_team(index, group):
+    """Ek click-e onno group-e soranor jonno"""
+
+    path = "data/teamnamePoints.txt"
+    group = _clean_group(group)
+
+    if group:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        if 0 <= index < len(lines) and lines[index].strip():
+            name = lines[index].split(",")[0].strip()
+            lines[index] = _group_line(name, group) + "\n"
+
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+
+    return redirect("/group")
+
 
 @app.route("/delete-group-team/<int:index>")
 def delete_group_team(index):
 
     path = "data/teamnamePoints.txt"
 
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     if 0 <= index < len(lines):
         lines.pop(index)
 
-    with open(path, "w") as f:
-        f.writelines(lines)
-
-    return redirect("/group")
-
-@app.route("/edit-group-team/<int:index>", methods=["POST"])
-def edit_group_team(index):
-
-    new = request.form.get("team")
-
-    path = "data/teamnamePoints.txt"
-
-    with open(path, "r") as f:
-        lines = f.readlines()
-
-    if 0 <= index < len(lines):
-        lines[index] = new + "\n"
-
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
     return redirect("/group")
@@ -7347,17 +7448,14 @@ def points():
         sync_db()
     except:
         pass
-    group_a = []
-    group_b = []
-    eliminated_a = []
-    eliminated_b = []
+    groups_map = {}      # group key -> [team data]  (joto khushi group)
 
     try:
         with open("data/teamnamePoints.txt", "r") as f:
             for line in f:
                 parts = [p.strip() for p in line.strip().split(",")]
 
-                if len(parts) == 2:
+                if len(parts) == 2 and parts[0]:
                     team = parts[0]
                     group = parts[1].lower()
 
@@ -7445,35 +7543,38 @@ def points():
 
 
                     # আপাতত কোনো team eliminated হবে না
-                    if group == "a":
-                        group_a.append(data)
-
-                    elif group == "b":
-                        group_b.append(data)
+                    groups_map.setdefault(group, []).append(data)
 
     except Exception as e:
         print("Error:", e)
 
     # 🔥 SORT INSIDE GROUP
-    group_a.sort(key=lambda x: (x["pts"], float(x["nrr"])), reverse=True)
-    group_b.sort(key=lambda x: (x["pts"], float(x["nrr"])), reverse=True)
+    groups = []
+    for key in sorted(groups_map, key=lambda k: (len(k), k)):
+        teams = groups_map[key]
+        # 🔥 point ja'der ache tara age (PTS, tarpor NRR), ja'der point nai tara nam onujayi A-Z
+        scored = [t for t in teams if t["pts"] > 0]
+        zero = [t for t in teams if t["pts"] <= 0]
+        scored.sort(key=lambda x: (x["pts"], float(x["nrr"])), reverse=True)
+        zero.sort(key=lambda x: x["team"].lower())
+        teams = scored + zero
 
-    # 🔥 mark top 2
-    for i, t in enumerate(group_a):
-        t["top"] = True if i < 2 else False
+        # 🔥 mark top 2
+        for i, t in enumerate(teams):
+            t["top"] = True if i < 2 else False
 
-    for i, t in enumerate(group_b):
-        t["top"] = True if i < 2 else False
+        groups.append({
+            "key": key,
+            "title": "Group " + key.upper(),
+            "teams": teams,
+            "eliminated": []      # ekhon kono team eliminated hoy na
+        })
 
     return render_template(
 
         "points.html",
 
-        group_a=group_a,
-        group_b=group_b,
-
-        eliminated_a=eliminated_a,
-        eliminated_b=eliminated_b
+        groups=groups
     )
 
 #nrr file create 

@@ -636,6 +636,15 @@ if (page.includes("live-match") || page.includes("match")) {
             if(text === "W"){
                 overHTML += `<span class="ball red">W</span>`;
             }
+            else if(text.startsWith("W+")){
+                // wide / no-ball + wicket: ONE ball -> red W circle, extra (NB / 2NB / WD ...) below
+                overHTML += `
+                    <div class="ball-wrap">
+                        <span class="ball red">W</span>
+                        <small class="extra">${text.slice(2)}</small>
+                    </div>
+                `;
+            }
             else if(text === "WD" || text === "NB"){
                 overHTML += `<span class="ball gray">${text}</span>`;
             }
