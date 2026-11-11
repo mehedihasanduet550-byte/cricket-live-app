@@ -132,9 +132,15 @@ button.save{
 <body>
 
 <div class="nav">
-     <a href="/live-score">Back</a>
+    <a href="/live-score">Back</a>
     <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
+
+    {% include "partials/nav_admin.html" %}
 </div>
 
 <h2 class="fixture-title" style="padding:10px;">🏏 Team Result</h2>
@@ -145,7 +151,7 @@ button.save{
     <div class="tm-left">
 
         <div class="tm-avatar">
-            <img src="/static/images/teams/{{ team.name }}.png"
+            <img src="/static/images/teams/{{ team.name }}.webp"
                 onload="this.nextElementSibling.style.display='none'"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
 

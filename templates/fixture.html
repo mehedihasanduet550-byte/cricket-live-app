@@ -1,35 +1,301 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Fixture</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
     <style>
-        .vs-box{
-            display:flex;
-            flex-direction:column;
-            align-items:center;
+        .vs-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
-        .stage-tag{
-            font-size:11px;
-            color:#fff;
-            padding:2px 6px;
-            border-radius:6px;
-            margin-top:4px;
+        .stage-tag {
+            font-size: 11px;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 6px;
+            margin-top: 4px;
         }
 
-        .knockout{ background:#ff3d00; }
-        .final{ background:gold; color:black; }
+        .knockout {
+            background: #ff3d00;
+        }
 
-        .section-title{
-            display:grid;
-            background: linear-gradient(90deg, #ff512f, #dd2476, #1fa2ff);
-            padding:10px;
-            font-size:18px;
-            font-weight:bold;
-            text-align:center;
+        .group {
+            background: #1565c0;
+        }
+
+        .qualifier {
+            background: #8e24aa;
+        }
+
+        .final {
+            background: gold;
+            color: black;
+        }
+
+        /* Quarter Final / Semi Final / Final : Group tag-er moto, sundor green */
+        .stage-green {
+            background: linear-gradient(135deg, #6a3ec2, #a4308a) !important;
+            color: #fff !important;
+            font-weight: 600;
+            border: 1.5px solid #ffffff00;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, .5);
+        }
+
+        .section-title {
+            display: grid;
+            background: linear-gradient(90deg, #b8472f, #a22f65, #2d73b5);
+            padding: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        /* ================= 🔥 BACKGROUND (fixture page only) ================= */
+        body {
+            background: linear-gradient(160deg, #0a0e2a 0%, #1a0b3b 50%, #06242c 100%) fixed !important;
+            min-height: 100vh;
+        }
+
+        /* rongin blur orb -- glass card gulo-r pechone thaka rong dekhay, tai glass sundor dekhay */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -10%;
+            z-index: -1;
+            pointer-events: none;
+            background:
+                radial-gradient(circle at 12% 10%, rgba(255, 64, 200, .20), transparent 38%),
+                radial-gradient(circle at 90% 22%, rgba(0, 229, 255, .18), transparent 36%),
+                radial-gradient(circle at 18% 62%, rgba(255, 171, 0, .14), transparent 38%),
+                radial-gradient(circle at 88% 82%, rgba(124, 77, 255, .22), transparent 40%),
+                radial-gradient(circle at 50% 100%, rgba(0, 230, 118, .12), transparent 36%);
+            animation: fxDrift 26s ease-in-out infinite alternate;
+        }
+
+        @keyframes fxDrift {
+            from {
+                transform: translate3d(-2%, -1%, 0) scale(1);
+            }
+
+            to {
+                transform: translate3d(2%, 2%, 0) scale(1.08);
+            }
+        }
+
+        /* ================= 🔥 3D GLASS CARD (rong --hue theke ashe) ================= */
+        .matches {
+            gap: 18px;
+            padding: 0 6px;
+        }
+
+        .matches .card.match {
+            --hue: 215;
+            --team-card-opacity: 0.28;
+            /* Transparency control: 0.30 = more transparent, 0.80 = less transparent */
+            position: relative;
+            overflow: hidden;
+            padding: 16px 14px 18px;
+            border-radius: 24px;
+            background:
+                linear-gradient(rgba(8, 10, 28, .12), rgba(8, 10, 28, .12)),
+                linear-gradient(150deg,
+                    hsla(var(--hue), 92%, 60%, var(--team-card-opacity)),
+                    hsla(var(--hue), 88%, 42%, calc(var(--team-card-opacity) * .58)) 58%,
+                    hsla(var(--hue), 92%, 52%, calc(var(--team-card-opacity) * .78)));
+            -webkit-backdrop-filter: blur(18px) saturate(160%);
+            backdrop-filter: blur(18px) saturate(160%);
+            border: 1px solid hsla(var(--hue), 90%, 88%, .50);
+            /* 3D: upore chokchoke dhar, niche chhaya, nicher "puru" edge, bhasha shadow */
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .55),
+                inset 0 -14px 24px hsla(var(--hue), 80%, 15%, .30),
+                0 6px 0 -2px hsla(var(--hue), 65%, 24%, .65),
+                0 20px 34px -8px hsla(var(--hue), 80%, 10%, .65);
+            transform: perspective(1000px) rotateX(0deg);
+            transition: transform .28s ease, box-shadow .28s ease;
+        }
+
+        /* upor-er diagonal chokchoke sheen */
+        .matches .card.match::before {
+            content: "";
+            position: absolute;
+            left: -20%;
+            right: -20%;
+            top: -30%;
+            height: 75%;
+            background: linear-gradient(115deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, .03) 55%, rgba(255, 255, 255, 0));
+            transform: rotate(-8deg);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* nicher rong-er glow */
+        .matches .card.match::after {
+            content: "";
+            position: absolute;
+            left: 15%;
+            right: 15%;
+            bottom: -30px;
+            height: 60px;
+            background: radial-gradient(closest-side, hsla(var(--hue), 90%, 62%, .34), transparent);
+            filter: blur(8px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .matches .card.match:hover {
+            transform: perspective(1000px) translateY(-6px) rotateX(3deg);
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .65),
+                inset 0 -14px 24px hsla(var(--hue), 80%, 15%, .30),
+                0 9px 0 -2px hsla(var(--hue), 65%, 24%, .65),
+                0 28px 44px -8px hsla(var(--hue), 80%, 10%, .72);
+        }
+
+        /* time + date : glass pill */
+        .matches .match-time {
+            z-index: 2;
+            top: 9px;
+            padding: 4px 14px 5px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, .42);
+            border: 1px solid rgba(255, 255, 255, .28);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, .25);
+            color: #f4f6ff;
+            font-size: 15px;
+            font-weight: 600;
+            line-height: 1.25;
+            letter-spacing: .3px;
+            text-shadow: none;
+            white-space: nowrap;
+        }
+
+        .matches .match-time .match-date {
+            font-size: 12.5px;
+            font-weight: 500;
+            margin: 0;
+            color: #cfd5ee;
+            opacity: 1;
+        }
+
+        .matches .teams-row {
+            position: relative;
+            z-index: 1;
+            margin-top: 58px;
+        }
+
+        /* team logo : glass frame */
+        .matches .team img {
+            width: 58px;
+            height: 58px;
+            object-fit: cover;
+            border-radius: 17px;
+            background: #fff;
+
+            box-shadow: 0 6px 12px rgba(0, 0, 0, .35);
+        }
+
+        .matches .team p {
+            margin: 10px 0 0;
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: .2px;
+            color: #f4f6ff;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, .75);
+        }
+
+        /* VS : 3D glass coin */
+        .matches .vs {
+            flex: none;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: .5px;
+            color: #fff;
+            background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .38), hsla(var(--hue), 85%, 50%, .40) 75%);
+            border: 1px solid rgba(255, 255, 255, .55);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .5);
+            text-shadow: none;
+        }
+
+        /* tag gulo : glossy pill */
+        .matches .stage-tag {
+            padding: 3px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: .3px;
+            text-shadow: none;
+            border: 1px solid rgba(255, 255, 255, .18);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+        }
+
+        .group {
+            background: linear-gradient(135deg, #2d6cb5, #1a3e7a);
+        }
+
+        .knockout {
+            background: linear-gradient(135deg, #d2552f, #8a2418);
+        }
+
+        .qualifier {
+            background: linear-gradient(135deg, #8a3a9e, #4d2478);
+        }
+
+        /* section heading : glass */
+        .section-title {
+            margin: 16px 12px 12px;
+            border-radius: 18px;
+            color: #fff;
+            letter-spacing: .4px;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+            font-weight: 600;
+            opacity: .95;
+            border: 1px solid rgba(255, 255, 255, .18);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, .35);
+        }
+
+        @media (max-width:768px) {
+            .matches .card.match {
+                padding: 14px 10px 16px;
+                border-radius: 22px;
+            }
+
+            .matches .team img {
+                width: 48px;
+                height: 48px;
+                border-radius: 14px;
+            }
+
+            .matches .team p {
+                font-size: 13px;
+            }
+
+            .section-title {
+                margin: 12px 8px 10px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            body::before {
+                animation: none;
+            }
+
+            .matches .card.match,
+            .matches .card.match:hover {
+                transition: none;
+            }
         }
     </style>
 
@@ -38,127 +304,193 @@
 
 <body>
 
-<div class="nav">
-    <a href="/">Home</a>
-    <a href="/stats">Scorecard</a>
-    <a href="/team">Team Info</a>
-    <a href="/fixture">Match Fixture</a>
-    <a href="/points">Points Table</a>
-    <a href="/comments">Comments</a>
-</div>
+    <div class="nav">
+        <a href="/">Home</a>
+        <a href="/stats">Scorecard</a>
+        <a href="/team">Team Info</a>
+        <a href="/fixture">Match Fixture</a>
+        <a href="/points">Points Table</a>
+        <a href="/comments">Comments</a>
 
-<h2 class="fixture-title">KCL Match Fixtures</h2>
+        {% include "partials/nav_admin.html" %}
+    </div>
 
-<!-- ================= GROUP + KNOCKOUT ================= -->
-<div class="section-title">Group Stage & Knockout</div>
+    {% set group_hues = {'a':210,'b':165,'c':30,'d':325,'e':270,'f':190,'g':100,'h':350,'i':55,'j':240} %}
+    <h2 class="fixture-title">KCL Match Fixtures</h2>
 
-<div class="matches">
-{% for match in fixtures %}
-    {% if match.stage != "final" %}
+    <!-- ================= GROUP + KNOCKOUT ================= -->
+    <div class="section-title">Group Stage & Knockout</div>
 
-    <div class="card match">
+    <div class="matches">
+        {% for match in fixtures %}
+        {% if match.stage != "final" %}
 
-        <div class="match-time">
-            {{ match.time }}
-            <div class="match-date">
-                {{ match.date }}
+        {# card-er rong: knockout = lal-komola, qualifier = beguni, group = group-er nijosso rong #}
+        {% set palette = [155, 215, 275, 330, 50, 190, 22, 100] %}
+        {% set hue = palette[loop.index0 % palette|length] %}
+
+        <div class="card match" style="--hue:{{ hue }};">
+
+            <div class="match-time">
+                {{ match.time }}
+                <div class="match-date">
+                    {{ match.date }}
+                </div>
             </div>
-        </div>
 
-        <div class="teams-row">
+            <div class="teams-row">
 
-            <div class="team">
-                <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team1 + '.webp') }}">
-                <p>{{ match.team1 }}</p>
-            </div>
-
-            <div class="vs-box">
-
-                <div class="vs">VS</div>
-
-                {% if match.stage == "knockout" %}
-
-                <div class="stage-tag knockout">
-                Knock Out
+                <div class="team">
+                    <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team1 + '.webp') }}">
+                    <p>{{ match.team1 }}</p>
                 </div>
 
-                {% if match.label %}
-                <div style="
+                <div class="vs-box">
+
+                    <div class="vs">VS</div>
+
+                    {% if match.group_tag %}
+                    <div class="stage-tag group">{{ match.group_tag }}</div>
+                    {% endif %}
+
+                    {% if match.is_knockout %}
+                    <div class="stage-tag knockout">Knock Out</div>
+                    {% endif %}
+
+                    {% if match.is_qualifier %}
+                    <div class="stage-tag qualifier">Qualifier</div>
+                    {% endif %}
+
+                    {% if match.label_show and ("final" in match.label_show|lower) %}
+                    <div class="stage-tag stage-green"
+                        style="background:linear-gradient(135deg,#6a3ec2,#a4308a) !important; color:#fff !important; font-weight:600; border:1.5px solid #ffffff00; box-shadow:0 1px 5px rgba(0,0,0,.5);">
+                        {{ match.label_show }}</div>
+                    {% elif match.label_show %}
+                    <div style="
                 font-size:22px;
-                color:#055df7;
+                color:#f4f6ff; font-weight:600; text-shadow:0 1px 3px rgba(0,0,0,.5);
                 margin-top:4px;
                 ">
-                {{ match.label }}
-                </div>
-                {% endif %}
+                        {{ match.label_show }}
+                    </div>
+                    {% endif %}
 
-                {% endif %}
+                    {% if match.completed %}
+                    <div class="stage-tag" style="background:#00b4c8;">
 
-                {% if match.completed %}
-                    <div class="stage-tag"
-                    style="background:#00b4c8;">
-
-                    {{ match.status.upper() }}
+                        {{ match.status.upper() }}
 
                     </div>
                     {% endif %}
 
+                </div>
+
+                <div class="team">
+                    <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team2 + '.webp') }}">
+                    <p>{{ match.team2 }}</p>
+                </div>
+
             </div>
 
-            <div class="team">
-                <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team2 + '.webp') }}">
-                <p>{{ match.team2 }}</p>
+        </div>
+
+        {% endif %}
+        {% endfor %}
+    </div>
+
+
+    <!-- ================= FINAL ================= -->
+    <div class="section-title">Final 🏆</div>
+
+    <div class="matches">
+
+        {% if finals %}
+
+        {% for match in finals %}
+        <div class="card match" style="--hue:45;">
+
+            <div class="match-time">
+                {{ match.time }}
+                <div class="match-date">
+                    {{ match.date }}
+                </div>
+            </div>
+
+            <div class="teams-row">
+
+                <div class="team">
+                    <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team1 + '.webp') }}">
+                    <p>{{ match.team1 }}</p>
+                </div>
+
+                <div class="vs-box">
+                    <div class="vs">VS</div>
+                    <div class="stage-tag stage-green"
+                        style="background:linear-gradient(135deg,#6a3ec2,#a4308a) !important; color:#fff !important; font-weight:600; border:1.5px solid #ffffff00; box-shadow:0 1px 5px rgba(0,0,0,.5);">
+                        FINAL 🏆</div>
+
+                    {% if match.group_tag %}
+                    <div class="stage-tag group" style="margin-top:3px;">{{ match.group_tag }}</div>
+                    {% endif %}
+
+                    {% if match.label_show and match.label_show.lower() != "grand final" %}
+                    <div
+                        style="font-size:18px; color:#f4f6ff; font-weight:600; text-shadow:0 1px 3px rgba(0,0,0,.5); margin-top:4px;">
+                        {{ match.label_show }}</div>
+                    {% endif %}
+
+                    {% if match.completed %}
+                    <div class="stage-tag" style="background:#00b4c8;">{{ match.status.upper() }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="team">
+                    <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team2 + '.webp') }}">
+                    <p>{{ match.team2 }}</p>
+                </div>
+
+            </div>
+
+        </div>
+        {% endfor %}
+
+        {% elif final_a and final_b and all_knockout_done %}
+
+        <div class="card match" style="--hue:45;">
+
+            <div class="match-time">
+                {{ grand_time }}
+                <div class="match-date">
+                    {{ grand_date }}
+                </div>
+            </div>
+
+            <div class="teams-row">
+
+                <div class="team">
+                    <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + final_a + '.webp') }}">
+                    <p>{{ final_a }}</p>
+                </div>
+
+                <div class="vs-box">
+                    <div class="vs">VS</div>
+                    <div class="stage-tag stage-green"
+                        style="background:linear-gradient(135deg,#6a3ec2,#a4308a) !important; color:#fff !important; font-weight:600; border:1.5px solid #ffffff00; box-shadow:0 1px 5px rgba(0,0,0,.5);">
+                        FINAL 🏆</div>
+                </div>
+
+                <div class="team">
+                    <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + final_b + '.webp') }}">
+                    <p>{{ final_b }}</p>
+                </div>
+
             </div>
 
         </div>
 
-    </div>
+        {% else %}
 
-    {% endif %}
-{% endfor %}
-</div>
-
-
-<!-- ================= FINAL ================= -->
-<div class="section-title">Final 🏆</div>
-
-<div class="matches">
-
-{% if final_a and final_b and all_knockout_done %}
-
-<div class="card match">
-
-    <div class="match-time">
-        {{ grand_time }}
-        <div class="match-date">
-            {{ grand_date }}
-        </div>
-    </div>
-
-    <div class="teams-row">
-
-        <div class="team">
-            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + final_a + '.webp') }}">
-            <p>{{ final_a }}</p>
-        </div>
-
-        <div class="vs-box">
-            <div class="vs">VS</div>
-            <div class="stage-tag final">FINAL 🏆</div>
-        </div>
-
-        <div class="team">
-            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + final_b + '.webp') }}">
-            <p>{{ final_b }}</p>
-        </div>
-
-    </div>
-
-</div>
-
-{% else %}
-
-<div style="
+        <div style="
     text-align:center;
     padding:20px;
     font-size:18px;
@@ -170,24 +502,25 @@
     box-shadow:0 0 10px rgba(0,0,0,.4);
     ">
 
-    🏆 Final teams not decided yet
+            🏆 Final teams not decided yet
 
-</div>
+        </div>
 
-{% endif %}
+        {% endif %}
 
-</div>
-<script>
+    </div>
+    <script>
 
-fetch("/heartbeat")
+        fetch("/heartbeat")
 
-setInterval(()=>{
+        setInterval(() => {
 
-fetch("/heartbeat")
+            fetch("/heartbeat")
 
-},5000)
+        }, 5000)
 
-</script>
+    </script>
     <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
 </body>
+
 </html>

@@ -36,11 +36,18 @@
         {% if data.innings == "2" %}
         {% set total_balls = data.overs|int * 6 %}
         {% set used_balls = data.over|int * 6 + data.ball|int %}
-        {% set left_balls = total_balls - used_balls %}
+        {% set left_balls = [total_balls - used_balls, 0]|max %}
+        {% set runs_needed = [data.target|int - data.score|int, 0]|max %}
 
         <div id="needText" style="text-align:center;">
-            {{ data.batting }} need {{ data.target|int - data.score|int }} runs in 
-            {{ (left_balls // 6) }}.{{ (left_balls % 6) }} overs
+            {% if runs_needed <= 0 %}
+                {{ data.batting }} won
+            {% elif left_balls <= 0 %}
+                Overs finished
+            {% else %}
+                {{ data.batting }} need {{ runs_needed }} run{{ '' if runs_needed == 1 else 's' }} in
+                {{ (left_balls // 6) }}.{{ (left_balls % 6) }} overs
+            {% endif %}
         </div>
         {% endif %}
 

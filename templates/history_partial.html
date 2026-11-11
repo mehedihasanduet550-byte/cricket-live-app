@@ -21,7 +21,7 @@
     </div>
 
     <div class="match-date"  style="color:rgb(7, 7, 7);">
-        {{ m.date if m.date else "Match" }}
+        {{ (m.date[:7] ~ m.date[9:11] ~ m.date[11:]) if m.date else "Match" }}
     </div>
 
     <div class="team-row">

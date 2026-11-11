@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fixture</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+        .vs-box{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+        }
+
+        .stage-tag{
+            font-size:11px;
+            color:#fff;
+            padding:2px 6px;
+            border-radius:6px;
+            margin-top:4px;
+        }
+
+        .knockout{ background:#ff3d00; }
+        .group{ background:#1565c0; }
+        .qualifier{ background:#8e24aa; }
+        .final{ background:gold; color:black; }
+
+        .section-title{
+            display:grid;
+            background: linear-gradient(90deg, #ff512f, #dd2476, #1fa2ff);
+            padding:10px;
+            font-size:18px;
+            font-weight:bold;
+            text-align:center;
+        }
+    </style>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+</head>
+
+<body>
+
+<div class="nav">
+    <a href="/">Home</a>
+    <a href="/stats">Scorecard</a>
+    <a href="/team">Team Info</a>
+    <a href="/fixture">Match Fixture</a>
+    <a href="/points">Points Table</a>
+    <a href="/comments">Comments</a>
+
+    {% include "partials/nav_admin.html" %}
+</div>
+
+<h2 class="fixture-title">KCL Match Fixtures</h2>
+
+<!-- ================= GROUP + KNOCKOUT ================= -->
+<div class="section-title">Group Stage & Knockout</div>
+
+<div class="matches">
+{% for match in fixtures %}
+    {% if match.stage != "final" %}
+
+    <div class="card match">
+
+        <div class="match-time">
+            {{ match.time }}
+            <div class="match-date">
+                {{ match.date }}
+            </div>
+        </div>
+
+        <div class="teams-row">
+
+            <div class="team">
+                <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team1 + '.webp') }}">
+                <p>{{ match.team1 }}</p>
+            </div>
+
+            <div class="vs-box">
+
+                <div class="vs">VS</div>
+
+                {% if match.group_tag %}
+                <div class="stage-tag group">{{ match.group_tag }}</div>
+                {% endif %}
+
+                {% if match.stage == "knockout" %}
+                <div class="stage-tag knockout">Knock Out</div>
+                {% endif %}
+
+                {% if match.is_qualifier %}
+                <div class="stage-tag qualifier">Qualifier</div>
+                {% endif %}
+
+                {% if match.label_show %}
+                <div style="
+                font-size:22px;
+                color:#055df7;
+                margin-top:4px;
+                ">
+                {{ match.label_show }}
+                </div>
+                {% endif %}
+
+                {% if match.completed %}
+                    <div class="stage-tag"
+                    style="background:#00b4c8;">
+
+                    {{ match.status.upper() }}
+
+                    </div>
+                    {% endif %}
+
+            </div>
+
+            <div class="team">
+                <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team2 + '.webp') }}">
+                <p>{{ match.team2 }}</p>
+            </div>
+
+        </div>
+
+    </div>
+
+    {% endif %}
+{% endfor %}
+</div>
+
+
+<!-- ================= FINAL ================= -->
+<div class="section-title">Final 🏆</div>
+
+<div class="matches">
+
+{% if finals %}
+
+{% for match in finals %}
+<div class="card match">
+
+    <div class="match-time">
+        {{ match.time }}
+        <div class="match-date">
+            {{ match.date }}
+        </div>
+    </div>
+
+    <div class="teams-row">
+
+        <div class="team">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team1 + '.webp') }}">
+            <p>{{ match.team1 }}</p>
+        </div>
+
+        <div class="vs-box">
+            <div class="vs">VS</div>
+            <div class="stage-tag final">FINAL 🏆</div>
+
+            {% if match.group_tag %}
+            <div class="stage-tag group" style="margin-top:3px;">{{ match.group_tag }}</div>
+            {% endif %}
+
+            {% if match.label_show and match.label_show.lower() != "grand final" %}
+            <div style="font-size:18px; color:#055df7; margin-top:4px;">{{ match.label_show }}</div>
+            {% endif %}
+
+            {% if match.completed %}
+            <div class="stage-tag" style="background:#00b4c8;">{{ match.status.upper() }}</div>
+            {% endif %}
+        </div>
+
+        <div class="team">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + match.team2 + '.webp') }}">
+            <p>{{ match.team2 }}</p>
+        </div>
+
+    </div>
+
+</div>
+{% endfor %}
+
+{% elif final_a and final_b and all_knockout_done %}
+
+<div class="card match">
+
+    <div class="match-time">
+        {{ grand_time }}
+        <div class="match-date">
+            {{ grand_date }}
+        </div>
+    </div>
+
+    <div class="teams-row">
+
+        <div class="team">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + final_a + '.webp') }}">
+            <p>{{ final_a }}</p>
+        </div>
+
+        <div class="vs-box">
+            <div class="vs">VS</div>
+            <div class="stage-tag final">FINAL 🏆</div>
+        </div>
+
+        <div class="team">
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + final_b + '.webp') }}">
+            <p>{{ final_b }}</p>
+        </div>
+
+    </div>
+
+</div>
+
+{% else %}
+
+<div style="
+    text-align:center;
+    padding:20px;
+    font-size:18px;
+    font-weight:bold;
+    color:#ddd;
+    background:linear-gradient(90deg, #07e664, #dd2476, #1fa2ff);
+    border-radius:12px;
+    margin:20px;
+    box-shadow:0 0 10px rgba(0,0,0,.4);
+    ">
+
+    🏆 Final teams not decided yet
+
+</div>
+
+{% endif %}
+
+</div>
+<script>
+
+fetch("/heartbeat")
+
+setInterval(()=>{
+
+fetch("/heartbeat")
+
+},5000)
+
+</script>
+    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+</body>
+</html>

@@ -5,8 +5,71 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+    <style>
+        .fx-form { display:flex; flex-wrap:wrap; gap:8px; width:100%; align-items:flex-start; }
+        .fx-form select, .fx-form input {
+            width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.3);
+            background:rgba(0,0,0,0.35); color:white; font-size:14px; min-width:0; box-sizing:border-box;
+        }
+        .fx-form input::placeholder { color:rgba(255,255,255,0.6); }
+        .fx-form select option { color:black; }
+        .fx-form input[type="date"], .fx-form input[type="time"] { color-scheme: dark; }
+        .fx-form input.fx-team {
+            padding-right:28px;
+            background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' fill='none' stroke='white' stroke-width='2'/></svg>");
+            background-repeat:no-repeat; background-position:right 10px center;
+        }
+        .fx-form input.fx-team::-webkit-calendar-picker-indicator { opacity:0; }
+        .fx-field { flex:1 1 140px; display:flex; flex-direction:column; gap:6px; min-width:0; }
+        .fx-vs { flex:0 0 auto; font-weight:bold; opacity:.85; padding-top:9px; }
+        .fx-form button[type="submit"] { align-self:flex-start; }
+        .fx-badge { color:white; padding:2px 6px; border-radius:6px; font-size:10px; margin-left:6px; }
+        .fx-meta { font-size:12px; opacity:.85; margin-top:3px; }
+        .fx-form .fx-multi-btn { width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.3);
+            background:rgba(0,0,0,0.35); color:white; font-size:14px; text-align:left; cursor:pointer; box-sizing:border-box; }
+        .fx-form .fx-multi-btn:hover { background:rgba(0,0,0,0.5); }
+        /* panel card-er vitore-i khule (niche-er list-er pechone jay na, clip-o hoy na) */
+        .fx-multi-panel { margin-top:6px; padding:8px 10px; text-align:left;
+            background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.3); border-radius:8px; }
+        .fx-multi-panel label { display:flex; align-items:center; gap:8px; padding:5px 2px; font-size:14px; color:white; cursor:pointer; }
+        .fx-form .fx-multi-panel input[type="checkbox"] { width:18px; height:18px; padding:0; flex:none; }
+        .fx-field.fx-multi { flex:1 1 100%; }
+        .fx-multi-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); column-gap:8px; }
+        .fx-multi-panel label { white-space:nowrap; }
+        .fx-sep { border-top:1px solid rgba(255,255,255,.25); margin:4px 0; }
+        .fx-empty { text-align:center; padding:10px; opacity:.8; }
+    </style>
 </head>
 <body>
+
+{% macro kindfields(pid) %}
+<div class="fx-field">
+    <select name="kind" id="{{ pid }}Kind" title="Match-er dhoron" onchange="kindChanged(this)">
+        <option value="group">Group</option>
+        <option value="Quarter Final 1">Quarter Final 1</option>
+        <option value="Quarter Final 2">Quarter Final 2</option>
+        <option value="Quarter Final 3">Quarter Final 3</option>
+        <option value="Quarter Final 4">Quarter Final 4</option>
+        <option value="Semi Final 1">Semi Final 1</option>
+        <option value="Semi Final 2">Semi Final 2</option>
+        <option value="Final">Final</option>
+    </select>
+</div>
+
+<div class="fx-field fx-multi">
+    <button type="button" class="fx-multi-btn" onclick="toggleMulti(this)">Group / Knockout / Qualifier ▾</button>
+    <div class="fx-multi-panel" style="display:none;">
+        <label><input type="checkbox" name="ko" value="1" onchange="multiChanged(this)"> Knockout</label>
+        <label><input type="checkbox" name="qual" value="1" onchange="multiChanged(this)"> Qualifier</label>
+        <div class="fx-sep"></div>
+        <div class="fx-multi-grid">
+        {% for g in group_keys %}<label><input type="checkbox" name="grp" value="{{ g }}" onchange="multiChanged(this)"> Group {{ g|upper }}</label>
+        {% endfor %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
 
 <!-- 🔥 Navigation -->
 <div class="nav">
@@ -17,67 +80,98 @@
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
+
+    {% include "partials/nav_admin.html" %}
 </div>
 
-<h2 class="fixture-title">Fixture Update</h2>
+<h2 class="fixture-title">Fixture Update <small>({{ rows|length }})</small></h2>
+
+
+<datalist id="teamList">
+    {% for t in teams %}<option value="{{ t }}">{% endfor %}
+    <option value="Winner QF1">
+    <option value="Winner QF2">
+    <option value="Winner QF3">
+    <option value="Winner QF4">
+    <option value="Winner SF1">
+    <option value="Winner SF2">
+    <option value="TBD">
+</datalist>
 
 <!-- 🔥 ADD -->
-<form action="/add-fixture" method="POST">
-<div class="team-card row-card add-box">
-    <input type="text" name="fixture"
-        placeholder="Team1 vs Team2 | Time | Date | Stage(knockout/final/group)" required>
-    <button type="submit">Add</button>
+<div class="team-card row-card center-card">
+    <div>➕ Add Fixture</div>
+</div>
+
+<form action="/add-fixture" method="POST" id="addForm">
+<div class="team-card row-card add-box" style="flex-wrap:wrap;">
+    <div class="fx-form">
+
+        <div class="fx-field">
+            <input type="text" name="team1"  class="fx-team" list="teamList" maxlength="30"
+                   placeholder="Team 1 (list theke bacho ba likho)" autocomplete="off" required
+                   onfocus="openList(this)" onblur="closeList(this)">
+        </div>
+
+        <span class="fx-vs">vs</span>
+
+        <div class="fx-field">
+            <input type="text" name="team2"  class="fx-team" list="teamList" maxlength="30"
+                   placeholder="Team 2 (list theke bacho ba likho)" autocomplete="off" required
+                   onfocus="openList(this)" onblur="closeList(this)">
+        </div>
+
+        <div class="fx-field"><input type="date" name="date" min="2026-01-01" max="2026-12-31" required title="Date"></div>
+        <div class="fx-field"><input type="time" name="time" value="19:00" required title="Time"></div>
+
+        {{ kindfields("a") }}
+
+        <button type="submit">Add</button>
+    </div>
 </div>
 </form>
 
 <!-- 🔥 LIST -->
-{% for f in fixtures %}
-
-{% set done = 'completed' in f.lower() %}
-{% set st = statuses[loop.index0] if loop.index0 < statuses|length else '' %}
+{% for f in rows %}
 
 <div class="team-card row-card player-row">
 
     <div class="left">
+    <div style="text-align:left;">
 
-        {{ loop.index }}.
-        {{ f.replace('|completed','') }}
+        {{ loop.index }}. {{ f.team1 }} vs {{ f.team2 }}
 
-        {% if done or st == 'completed' %}
-        <span style="
-            background:#00c853;
-            color:white;
-            padding:2px 6px;
-            border-radius:6px;
-            font-size:10px;
-            margin-left:6px;
-        ">
-            COMPLETED
-        </span>
-        {% elif st == 'running' %}
-        <span style="
-            background:#ff6d00;
-            color:white;
-            padding:2px 6px;
-            border-radius:6px;
-            font-size:10px;
-            margin-left:6px;
-        ">
-            RUNNING
-        </span>
+        {% if f.done %}
+        <span class="fx-badge" style="background:#00c853;">COMPLETED</span>
+        {% elif f.running %}
+        <span class="fx-badge" style="background:#ff6d00;">RUNNING</span>
         {% endif %}
 
+        <div class="fx-meta">
+            {{ f.date }} · {{ f.time }} · {{ f.meta }}
+        </div>
+
+    </div>
     </div>
 
     <div class="right actions">
 
         <!-- EDIT -->
-        <button type="button"
-        onclick="openEdit({{ indexes[loop.index0] }}, `{{f}}`)"
-        class="edit-btn">Edit</button>
+        <button type="button" class="edit-btn"
+            data-index="{{ f.idx }}"
+            data-team1="{{ f.team1 }}"
+            data-team2="{{ f.team2 }}"
+            data-date="{{ f.date_iso }}"
+            data-time="{{ f.time24 }}"
+            data-stage="{{ f.stage }}"
+            data-kind="{{ f.kind }}"
+            data-grp="{{ f.grp }}"
+            data-ko="{{ 1 if f.ko else 0 }}"
+            data-qual="{{ 1 if f.qual else 0 }}"
+            onclick="openEdit(this)">Edit</button>
 
         <!-- DELETE -->
-        <a href="/delete-fixture/{{ indexes[loop.index0] }}"
+        <a href="/delete-fixture/{{ f.idx }}"
            onclick="return confirm('Delete fixture?')"
            class="delete-btn">Delete</a>
 
@@ -86,54 +180,133 @@
 </div>
 {% endfor %}
 
+{% if not rows %}
+<div class="fx-empty">Kono fixture nai. Upor theke add koro.</div>
+{% endif %}
+
 <!-- 🔥 MODAL -->
 <div id="editModal" class="modal">
-    <div class="team-card row-card add-box"
+    <div class="team-card row-card add-box" style="width:95%; max-width:900px;">
 
-        style="
+        <form id="editForm" method="POST" class="fx-form">
 
-        width:95%;
+            <div class="fx-field">
+            <input type="text" name="team1" id="eTeam1" class="fx-team" list="teamList" maxlength="30"
+                   placeholder="Team 1" autocomplete="off" required
+                   onfocus="openList(this)" onblur="closeList(this)">
+        </div>
 
-        max-width:900px;
+            <span class="fx-vs">vs</span>
 
-        ">
+            <div class="fx-field">
+            <input type="text" name="team2" id="eTeam2" class="fx-team" list="teamList" maxlength="30"
+                   placeholder="Team 2" autocomplete="off" required
+                   onfocus="openList(this)" onblur="closeList(this)">
+        </div>
 
-        <form id="editForm" method="POST"
-            style="display:flex; gap:10px; width:100%;">
+            <div class="fx-field"><input type="date" name="date" id="eDate" min="2026-01-01" max="2026-12-31" required></div>
+            <div class="fx-field"><input type="time" name="time" id="eTime" required></div>
 
-                <input type="text"
-                name="fixture"
-                id="editInput"
-                required
+            {{ kindfields("e") }}
 
-                style="
-                flex:1;
-                ">
-
-                <button type="submit"
-                style="
-                min-width:100px;
-                ">
-
-                Update
-
-                </button>
+            <button type="submit" style="min-width:100px;">Update</button>
 
         </form>
+
     </div>
 </div>
 
 <script>
-function openEdit(index, value) {
+// Chrome datalist typed text diye filter kore -- tai focus-e box khali kore shob team dekhai,
+// kichu na bachle/likhle ager nam ferot ane
+// ---------- Prothom dropdown (Group / Quarter / Semi / Final) + Group-er checkbox box ----------
+// Group select korle 2nd box: Knockout + Qualifier (jekono ekta/duita) ar Group A-J (shudhu ekta).
+function multiLabel(form) {
+    const parts = [];
+    const g = form.querySelector('input[name="grp"]:checked');
+    if (g) parts.push("Group " + g.value.toUpperCase());
+    if (form.querySelector('input[name="ko"]').checked) parts.push("Knockout");
+    if (form.querySelector('input[name="qual"]').checked) parts.push("Qualifier");
+    form.querySelector(".fx-multi-btn").textContent =
+        (parts.length ? parts.join(" + ") : "Group / Knockout / Qualifier") + " ▾";
+}
 
-    const modal = document.getElementById("editModal");
-    const input = document.getElementById("editInput");
-    const form = document.getElementById("editForm");
+function closePanels() {
+    document.querySelectorAll(".fx-multi-panel").forEach(p => p.style.display = "none");
+}
 
-    input.value = value;
-    form.action = "/edit-fixture/" + index;
+function toggleMulti(btn) {
+    const panel = btn.nextElementSibling;
+    const open = panel.style.display === "none";
+    closePanels();
+    panel.style.display = open ? "" : "none";
+}
 
-    modal.classList.add("show");
+function multiChanged(cb) {
+    const form = cb.closest("form");
+    if (cb.name === "grp" && cb.checked) {            // Group A-J: ekbar-e ekta-i
+        form.querySelectorAll('input[name="grp"]').forEach(o => { if (o !== cb) o.checked = false; });
+    }
+    multiLabel(form);
+}
+
+function kindChanged(sel) {
+    const form = sel.closest("form");
+    const isGroup = sel.value === "group";
+    form.querySelector(".fx-multi").style.display = isGroup ? "" : "none";
+    if (!isGroup) {
+        form.querySelectorAll(".fx-multi input").forEach(c => c.checked = false);
+        closePanels();
+    }
+    multiLabel(form);
+}
+
+// edit modal bhora
+function setKind(form, d) {
+    const sel = form.querySelector('[name="kind"]');
+    const kind = d.kind || "group";
+
+    if (![...sel.options].some(o => o.value === kind)) sel.add(new Option(kind, kind));   // purono onno label
+    sel.value = kind;
+
+    form.querySelectorAll(".fx-multi input").forEach(c => c.checked = false);
+    if (kind === "group") {
+        form.querySelector('input[name="ko"]').checked = d.ko === "1";
+        form.querySelector('input[name="qual"]').checked = d.qual === "1";
+        const g = form.querySelector('input[name="grp"][value="' + (d.grp || "") + '"]');
+        if (g) g.checked = true;
+    }
+    kindChanged(sel);
+}
+
+document.addEventListener("click", function (e) {
+    if (!e.target.closest(".fx-multi")) closePanels();
+});
+
+kindChanged(document.getElementById("aKind"));
+
+function openList(el) {
+    el.dataset.prev = el.value;
+    el.value = "";
+}
+function closeList(el) {
+    if (!el.value.trim()) el.value = el.dataset.prev || "";
+}
+
+function openEdit(btn) {
+
+    const d = btn.dataset;
+
+    document.getElementById("eTeam1").value = d.team1 || "";
+    document.getElementById("eTeam2").value = d.team2 || "";
+
+    document.getElementById("eDate").value = d.date || "";
+    document.getElementById("eTime").value = d.time || "";
+    setKind(document.getElementById("editForm"), d);
+
+    document.getElementById("editForm").action = "/edit-fixture/" + d.index;
+
+    document.getElementById("editModal").classList.add("show");
 }
 
 window.onclick = function(e) {

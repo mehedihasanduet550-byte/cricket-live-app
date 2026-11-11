@@ -1,0 +1,34 @@
+{% if is_logged_in %}
+    <a href="/live">Live Score Update</a>
+    <a href="/logout" onclick="return confirm('Logout?')">Logout</a>
+{% else %}
+    <a href="/login">Admin Login</a>
+{% endif %}
+<script>
+/* PC: nav-er upor mouse wheel ghurale nav left/right scroll hobe (index.html er moto, sob page-e) */
+(function () {
+    if (window.__navWheelReady) return;
+    window.__navWheelReady = true;
+
+    function setup() {
+        document.querySelectorAll(".nav").forEach(function (nav) {
+            if (nav.__wheelBound) return;
+            nav.__wheelBound = true;
+
+            nav.addEventListener("wheel", function (e) {
+                // shudhu PC, ar nav jodi sotti overflow kore tokhon-i
+                if (window.innerWidth > 768 && nav.scrollWidth > nav.clientWidth) {
+                    e.preventDefault();
+                    nav.scrollLeft += e.deltaY;
+                }
+            }, { passive: false });
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", setup);
+    } else {
+        setup();
+    }
+})();
+</script>

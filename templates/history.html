@@ -1,48 +1,302 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Match History</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+
+    <style>
+        :root {
+            --team-card-opacity: 0.58;
+        }
+
+        /* BACKGROUND */
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(160deg,
+                    #0a0e2a 0%,
+                    #1a0b3b 50%,
+                    #06242c 100%) fixed !important;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -10%;
+            z-index: -1;
+            pointer-events: none;
+
+            background:
+                radial-gradient(circle at 12% 10%, rgba(255, 64, 200, .20), transparent 38%),
+                radial-gradient(circle at 90% 22%, rgba(0, 229, 255, .18), transparent 36%),
+                radial-gradient(circle at 18% 62%, rgba(255, 171, 0, .14), transparent 38%),
+                radial-gradient(circle at 88% 82%, rgba(124, 77, 255, .22), transparent 40%),
+                radial-gradient(circle at 50% 100%, rgba(0, 230, 118, .12), transparent 36%);
+
+            animation: historyDrift 26s ease-in-out infinite alternate;
+        }
+
+        @keyframes historyDrift {
+            from {
+                transform: translate3d(-2%, -1%, 0) scale(1);
+            }
+
+            to {
+                transform: translate3d(2%, 2%, 0) scale(1.08);
+            }
+        }
+
+        /* HEADING */
+
+        .fixture-title {
+            color: #ffffff !important;
+            text-align: center;
+            text-shadow:
+                0 2px 5px rgba(0, 0, 0, .8),
+                0 0 15px rgba(0, 229, 255, .25);
+        }
+
+        /* HISTORY CONTAINER */
+
+        #history-container {
+            width: 100%;
+            max-width: none;
+            margin: 20px auto 45px;
+            box-sizing: border-box;
+        }
+
+        /* HISTORY CARDS */
+
+        #history-container>div {
+            position: relative;
+            overflow: hidden;
+            box-sizing: border-box;
+
+            background:
+                linear-gradient(rgba(8, 10, 28, .12),
+                    rgba(8, 10, 28, .12)),
+                linear-gradient(150deg,
+                    rgba(0, 220, 180, var(--team-card-opacity)),
+                    rgba(0, 100, 120, var(--team-card-opacity)) 58%,
+                    rgba(0, 180, 160, var(--team-card-opacity))) !important;
+
+            border: 1px solid rgba(150, 255, 230, .40);
+            border-radius: 18px;
+
+            -webkit-backdrop-filter: blur(18px) saturate(160%);
+            backdrop-filter: blur(18px) saturate(160%);
+
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .35),
+                inset 0 -14px 24px rgba(0, 70, 70, .25),
+                0 6px 0 -2px rgba(0, 70, 70, .55),
+                0 20px 34px -8px rgba(0, 0, 0, .45);
+
+            transform: perspective(1000px) rotateX(0deg);
+
+            transition:
+                transform .28s ease,
+                box-shadow .28s ease,
+                filter .28s ease;
+        }
+
+        /* GLASS HIGHLIGHT */
+
+        #history-container>div::before {
+            content: "";
+            position: absolute;
+            left: -20%;
+            right: -20%;
+            top: -30%;
+            height: 75%;
+
+            background: linear-gradient(115deg,
+                    rgba(255, 255, 255, .16),
+                    rgba(255, 255, 255, .03) 55%,
+                    transparent);
+
+            transform: rotate(-8deg);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* HOVER - MATCH FIXTURE STYLE */
+
+        #history-container>div:hover {
+            transform: perspective(1000px) translateY(-6px) rotateX(3deg);
+
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .65),
+                inset 0 -14px 24px rgba(0, 70, 70, .30),
+                0 9px 0 -2px rgba(0, 70, 70, .60),
+                0 28px 44px -8px rgba(0, 0, 0, .65);
+
+            filter: brightness(1.08);
+        }
+
+        /* TEXT */
+
+        #history-container h1,
+        #history-container h2,
+        #history-container h3,
+        #history-container h4,
+        #history-container p,
+        #history-container span,
+        #history-container label {
+            color: #ffffff;
+        }
+
+        /* LINKS */
+
+        #history-container a {
+            text-decoration: none;
+        }
+
+        /* BUTTONS */
+
+        #history-container button {
+            cursor: pointer;
+            transition: .2s ease;
+        }
+
+        #history-container button:hover {
+            filter: brightness(1.15);
+            transform: translateY(-2px);
+        }
+
+        /* TABLE */
+
+        #history-container table {
+            width: 100%;
+            border-collapse: collapse;
+            color: #ffffff;
+        }
+
+        #history-container th {
+            background: rgba(0, 220, 180, .20);
+            color: #ffffff;
+            padding: 12px;
+        }
+
+        #history-container td {
+            color: #ffffff;
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, .12);
+        }
+
+        /* RESPONSIVE */
+
+        @media (max-width: 900px) {
+            #history-container {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 600px) {
+            #history-container {
+                width: 100%;
+                margin: 15px auto 35px;
+            }
+
+            #history-container>div {
+                border-radius: 15px;
+            }
+        }
+
+        /* REDUCED MOTION */
+
+        @media (prefers-reduced-motion: reduce) {
+            body::before {
+                animation: none;
+            }
+
+            #history-container>div {
+                transition: none;
+            }
+        }
+
+        /* TEAM NAME - NORMAL FONT WEIGHT */
+
+        #history-container .team-left span {
+            font-size: 17px !important;
+        }
+
+        /* MOBILE */
+
+        @media (max-width: 600px) {
+            #history-container .team-left span {
+                font-size: 14px !important;
+                font-weight: 400 !important;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
-<div class="nav">
-    <a href="/live-score">Back</a>
-    <a href="/">Home</a>
-    <a href="/comments">Comments</a>
-</div>
+    <div class="nav">
+        <a href="/live-score">Back</a>
+        <a href="/">Home</a>
+        <a href="/stats">Scorecard</a>
+        <a href="/team">Team Info</a>
+        <a href="/fixture">Match Fixture</a>
+        <a href="/points">Points Table</a>
+        <a href="/comments">Comments</a>
 
-<h2 class="fixture-title">📜 Match History</h2>
+        {% include "partials/nav_admin.html" %}
+    </div>
 
-<!-- 🔥 ONLY THIS DIV WILL UPDATE -->
-<div id="history-container">
-    {% include "history_partial.html" %}
-</div>
+    <h2 class="fixture-title">📜 Match History</h2>
 
-<!-- 🔥 AJAX SCRIPT -->
-<script>
-setInterval(() => {
-    fetch("/history-data?t=" + new Date().getTime())
-        .then(res => res.text())
-        .then(html => {
-            document.getElementById("history-container").innerHTML = html;
-        });
-}, 500);
-</script>
-<script>
+    <div id="history-container">
+        {% include "history_partial.html" %}
+    </div>
 
-fetch("/heartbeat")
+    <!-- AJAX AUTO REFRESH -->
+    <script>
+        setInterval(() => {
 
-setInterval(()=>{
+            const container = document.getElementById("history-container");
 
-fetch("/heartbeat")
+            // Mouse History Container-এর উপর থাকলে refresh বন্ধ থাকবে
+            if (container.matches(":hover")) {
+                return;
+            }
 
-},5000)
+            fetch("/history-data?t=" + new Date().getTime())
+                .then(res => res.text())
+                .then(html => {
 
-</script>
+                    // Content পরিবর্তন হলেই শুধু update হবে
+                    if (container.innerHTML.trim() !== html.trim()) {
+                        container.innerHTML = html;
+                    }
+
+                })
+                .catch(err => {
+                    console.error("History refresh error:", err);
+                });
+
+        }, 500);
+    </script>
+
+    <!-- HEARTBEAT -->
+    <script>
+        fetch("/heartbeat");
+
+        setInterval(() => {
+            fetch("/heartbeat");
+        }, 5000);
+    </script>
+
     <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+
 </body>
+
 </html>

@@ -10,6 +10,7 @@
 <h3 class="result-text">{{ result }}</h3>
 
 <!-- 🔴 FIRST INNINGS -->
+<div class="summary-card">
 <div class="team-header">
     <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + first.batting + '.webp') }}">
     <span>{{ first.batting }}</span>
@@ -156,6 +157,8 @@
     {% endfor %}
 
     {% endif %}
+</div>
+{% if second and second.score %}<div class="summary-card">{% endif %}
 <!-- 🔵 SECOND INNINGS -->
 {% if second and second.score %}
 
@@ -309,4 +312,5 @@
         {% endfor %}
 
     {% endif %}   
+{% if second and second.score %}</div>{% endif %}
 </div>

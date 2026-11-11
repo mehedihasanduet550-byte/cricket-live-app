@@ -10,7 +10,9 @@
     <!-- 🕒 -->
     <div class="match-date live-text">
 
-        {% if live_match.status == "LIVE" %}
+        {% if live_match.date %}
+            {{ live_match.date }}
+        {% elif live_match.status == "LIVE" %}
             Live Match
         {% else %}
             Last Match

@@ -15,7 +15,8 @@
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
-    
+
+    {% include "partials/nav_admin.html" %}
 </div>
 <div class="nav">
     <button id="btnLive" onclick="showTab('live')">Live</button>
@@ -66,7 +67,7 @@
 <!-- 🔥 PLAYER OF MATCH -->
 <div class="match-card" style="margin-top:10px;">
 
-    <div style="color:#777; font-size:13px; margin-bottom:8px;">
+    <div class="pom-label">
         PLAYER OF THE MATCH
     </div>
 
@@ -94,6 +95,7 @@
 
 <h3 class="result-text">{{ result }}</h3>
     <!-- 🔴 FIRST INNINGS -->
+<div class="summary-card">
     <div class="team-header">
         <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + first.batting + '.webp') }}">
         <span>{{ first.batting }}</span>
@@ -236,6 +238,8 @@
     {% endfor %}
 
     {% endif %}
+</div>
+{% if second.score %}<div class="summary-card">{% endif %}
     <!-- 🔵 SECOND INNINGS -->
     {% if second.score %}
     <div class="team-header">
@@ -382,6 +386,7 @@
     {% endfor %}
 
     {% endif %}
+{% if second.score %}</div>{% endif %}
 </div>
 
 <!-- ================= SQUADS ================= -->

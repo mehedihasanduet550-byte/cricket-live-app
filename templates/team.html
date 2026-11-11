@@ -1,51 +1,206 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Teams</title>
 
-    <!-- 🔥 CSS link (main fix) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-
-    <!-- 🔥 responsive -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+
+    <style>
+        /* ==========================================
+   TEAM PAGE BACKGROUND - SAME AS FIXTURE
+========================================== */
+
+        body {
+            background: linear-gradient(160deg,
+                    #0a0e2a 0%,
+                    #1a0b3b 50%,
+                    #06242c 100%) fixed !important;
+
+            min-height: 100vh;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -10%;
+            z-index: -1;
+            pointer-events: none;
+
+            background:
+                radial-gradient(circle at 12% 10%, rgba(255, 64, 200, .20), transparent 38%),
+                radial-gradient(circle at 90% 22%, rgba(0, 229, 255, .18), transparent 36%),
+                radial-gradient(circle at 18% 62%, rgba(255, 171, 0, .14), transparent 38%),
+                radial-gradient(circle at 88% 82%, rgba(124, 77, 255, .22), transparent 40%),
+                radial-gradient(circle at 50% 100%, rgba(0, 230, 118, .12), transparent 36%);
+
+            animation: fxDrift 26s ease-in-out infinite alternate;
+        }
+
+        @keyframes fxDrift {
+            from {
+                transform: translate3d(-2%, -1%, 0) scale(1);
+            }
+
+            to {
+                transform: translate3d(2%, 2%, 0) scale(1.08);
+            }
+        }
+
+
+        /* ==========================================
+   TEAM CARD - TRANSPARENCY CONTROL
+========================================== */
+
+        .team-card {
+            --team-card-opacity: 0.28;
+
+            position: relative;
+            overflow: hidden;
+
+            background:
+                linear-gradient(rgba(8, 10, 28, .12),
+                    rgba(8, 10, 28, .12)),
+                linear-gradient(150deg,
+                    hsla(var(--hue), 92%, 60%, var(--team-card-opacity)),
+                    hsla(var(--hue), 88%, 42%, calc(var(--team-card-opacity) * .58)) 58%,
+                    hsla(var(--hue), 92%, 52%, calc(var(--team-card-opacity) * .78))) !important;
+
+            -webkit-backdrop-filter: blur(18px) saturate(160%);
+            backdrop-filter: blur(18px) saturate(160%);
+
+            border: 1px solid hsla(var(--hue), 90%, 88%, .50);
+
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .55),
+                inset 0 -14px 24px hsla(var(--hue), 80%, 15%, .30),
+                0 6px 0 -2px hsla(var(--hue), 65%, 24%, .65),
+                0 20px 34px -8px hsla(var(--hue), 80%, 10%, .55);
+
+            transition: box-shadow .28s ease;
+        }
+
+
+        /* ==========================================
+   DIFFERENT COLOR GLASS EFFECT
+========================================== */
+
+        .team-card::before {
+            content: "";
+            position: absolute;
+
+            left: -20%;
+            right: -20%;
+            top: -30%;
+            height: 75%;
+
+            background: linear-gradient(115deg,
+                    rgba(255, 255, 255, .20),
+                    rgba(255, 255, 255, .03) 55%,
+                    rgba(255, 255, 255, 0));
+
+            transform: rotate(-8deg);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+
+        /* Bottom color glow */
+
+        .team-card::after {
+            content: "";
+            position: absolute;
+
+            left: 15%;
+            right: 15%;
+            bottom: -30px;
+            height: 60px;
+
+            background: radial-gradient(closest-side,
+                    hsla(var(--hue), 90%, 62%, .34),
+                    transparent);
+
+            filter: blur(8px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+
+        /* Image and text above glass */
+
+        .team-card img,
+        .team-card p {
+            position: relative;
+            z-index: 1;
+        }
+
+
+        /* Hover effect */
+
+        .team-card:hover {
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .65),
+                inset 0 -14px 24px hsla(var(--hue), 80%, 15%, .30),
+                0 9px 0 -2px hsla(var(--hue), 65%, 24%, .65),
+                0 28px 44px -8px hsla(var(--hue), 80%, 10%, .72);
+        }
+
+
+        @media (prefers-reduced-motion: reduce) {
+            body::before {
+                animation: none;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
-<!-- 🔥 Navigation -->
-<div class="nav">
-    <a href="/">Home</a>
-    <a href="/stats">Scorecard</a>
-    <a href="/team">Team Info</a>
-    <a href="/fixture">Match Fixture</a>
-    <a href="/points">Points Table</a>
-    <a href="/comments">Comments</a>
-    
-</div>
+    <div class="nav">
+        <a href="/">Home</a>
+        <a href="/stats">Scorecard</a>
+        <a href="/team">Team Info</a>
+        <a href="/fixture">Match Fixture</a>
+        <a href="/points">Points Table</a>
+        <a href="/comments">Comments</a>
 
-<h2 class="fixture-title">All Teams</h2>
+        {% include "partials/nav_admin.html" %}
+    </div>
 
-<div class="team-grid">
-    {% for team in teams %}
-    <a href="/team/{{team}}" class="team-card">
+    <h2 class="fixture-title">All Teams</h2>
 
-        <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + team + '.webp') }}">
-        <p>{{ team }}</p>
+    <div class="team-grid">
 
-    </a>
-    {% endfor %}
-</div>
-<script>
+        {% set palette = [155, 215, 275, 330, 50, 190, 22, 100] %}
 
-fetch("/heartbeat")
+        {% for team in teams %}
 
-setInterval(()=>{
+        {% set hue = palette[loop.index0 % palette|length] %}
 
-fetch("/heartbeat")
+        <a href="/team/{{team}}" class="team-card" style="--hue:{{ hue }};">
 
-},5000)
+            <img loading="lazy" src="{{ url_for('static', filename='images/teams/' + team + '.webp') }}">
 
-</script>
+            <p>{{ team }}</p>
+
+        </a>
+
+        {% endfor %}
+
+    </div>
+
+    <script>
+        fetch("/heartbeat")
+
+        setInterval(() => {
+            fetch("/heartbeat")
+        }, 5000)
+    </script>
+
     <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+
 </body>
+
 </html>

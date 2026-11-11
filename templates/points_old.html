@@ -11,31 +11,7 @@
             background: linear-gradient(135deg, #1d2b64, #f8cdda);
         }
 
-        .nav {
-            display: flex;
-            overflow-x: auto;
-            white-space: nowrap;
-            background: linear-gradient(45deg, #4facfe, #00f2fe, #43e97b);
-            /*background: linear-gradient(45deg, #667eea, #764ba2);*/
-            overflow-y: visible;
-            scrollbar-width: none;
-        }
-
-        .nav::-webkit-scrollbar {
-            display: none;
-        }
-
-        .nav a{
-            flex:1;
-            padding:10px;
-            text-align:center;
-            text-decoration:none;
-            color:black;
-            font-weight:bold;
-            border-right: 1px solid rgba(255,255,255,0.4);
-        }
-
-        /* TITLE */
+/* TITLE */
         .title{
             text-align:center;
             margin:15px;
@@ -122,6 +98,52 @@
             font-weight: bold;
             border-left: 5px solid gold;
         }
+
+        /* ==========================================
+           NAVIGATION (same as every other page / style.css)
+        ========================================== */
+
+        .nav {
+            display: flex;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            background: linear-gradient(45deg, #4facfe, #00f2fe, #43e97b);
+            scrollbar-width: none;
+            scroll-behavior: smooth;
+            font-family: Arial, sans-serif;
+        }
+
+        .nav::-webkit-scrollbar {
+            display: none;
+        }
+
+        .nav a {
+            flex: 1 0 14.28%;
+            text-align: center;
+            padding: 10px;
+            color: rgb(1, 0, 0);
+            text-decoration: none;
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            border-right: 1px solid rgba(255, 255, 255, 0.4);
+            box-sizing: border-box;
+        }
+
+        .nav a:last-child {
+            border-right: none;
+        }
+
+        @media (max-width: 768px) {
+            .nav a {
+                display: flex;
+                flex-direction: column;
+                text-align: center;
+                font-size: 11px;
+            }
+        }
+
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
 </head>
@@ -136,6 +158,8 @@
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
+
+    {% include "partials/nav_admin.html" %}
 </div>
 
 <div class="title">Points Table</div>

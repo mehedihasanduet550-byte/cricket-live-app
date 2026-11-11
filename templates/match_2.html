@@ -4,6 +4,89 @@
     <title>Match</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+/* LIVE TAB - TEAM INFO GLASS CARD */
+
+.live-container > .live-card {
+    --hue: 155;
+    --team-card-opacity: 0.28;
+
+    position: relative;
+    overflow: hidden;
+
+    background:
+        linear-gradient(rgba(8,10,28,.12),rgba(8,10,28,.12)),
+        linear-gradient(
+            150deg,
+            hsla(var(--hue),92%,60%,var(--team-card-opacity)),
+            hsla(var(--hue),88%,42%,calc(var(--team-card-opacity)*.58)) 58%,
+            hsla(var(--hue),92%,52%,calc(var(--team-card-opacity)*.78))
+        ) !important;
+
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+
+    border: 1px solid hsla(var(--hue),90%,88%,.50);
+    border-radius: 12px;
+
+    box-shadow:
+        inset 0 1.5px 0 rgba(255,255,255,.55),
+        inset 0 -14px 24px hsla(var(--hue),80%,15%,.30),
+        0 6px 0 -2px hsla(var(--hue),65%,24%,.65),
+        0 20px 34px -8px hsla(var(--hue),80%,10%,.55);
+}
+
+/* CARD COLORS */
+.live-container > .live-card:nth-child(1) { --hue:155; }
+.live-container > .live-card:nth-child(2) { --hue:215; }
+.live-container > .live-card:nth-child(3) { --hue:155; }
+.live-container > .live-card:nth-child(4) { --hue:215; }
+.live-container > .live-card:nth-child(5) { --hue:275; }
+
+/* LIGHT REFLECTION */
+.live-container > .live-card::before {
+    content:"";
+    position:absolute;
+    left:-20%;
+    right:-20%;
+    top:-30%;
+    height:75%;
+    background:linear-gradient(
+        115deg,
+        rgba(255,255,255,.20),
+        rgba(255,255,255,.03) 55%,
+        transparent
+    );
+    transform:rotate(-8deg);
+    pointer-events:none;
+    z-index:0;
+}
+
+/* BOTTOM GLOW */
+.live-container > .live-card::after {
+    content:"";
+    position:absolute;
+    left:15%;
+    right:15%;
+    bottom:-30px;
+    height:60px;
+    background:radial-gradient(
+        closest-side,
+        hsla(var(--hue),90%,62%,.34),
+        transparent
+    );
+    filter:blur(8px);
+    pointer-events:none;
+    z-index:0;
+}
+
+/* CONTENT */
+.live-container > .live-card > * {
+    position:relative;
+    z-index:1;
+}
+</style>
 </head>
 
 <body>
@@ -15,6 +98,8 @@
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
+
+    {% include "partials/nav_admin.html" %}
 </div>
 <!-- 🔝 NAV -->
 <div class="nav">

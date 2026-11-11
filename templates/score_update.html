@@ -1,55 +1,379 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Score Update</title>
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+
+    <style>
+        /* ==========================================
+   SCORE UPDATE PAGE BACKGROUND
+========================================== */
+
+        body {
+            background: linear-gradient(160deg,
+                    #0a0e2a 0%,
+                    #1a0b3b 50%,
+                    #06242c 100%) fixed !important;
+
+            min-height: 100vh;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -10%;
+            z-index: -1;
+            pointer-events: none;
+
+            background:
+                radial-gradient(circle at 12% 10%, rgba(255, 64, 200, .20), transparent 38%),
+                radial-gradient(circle at 90% 22%, rgba(0, 229, 255, .18), transparent 36%),
+                radial-gradient(circle at 18% 62%, rgba(255, 171, 0, .14), transparent 38%),
+                radial-gradient(circle at 88% 82%, rgba(124, 77, 255, .22), transparent 40%),
+                radial-gradient(circle at 50% 100%, rgba(0, 230, 118, .12), transparent 36%);
+
+            animation: scorePageDrift 26s ease-in-out infinite alternate;
+        }
+
+        @keyframes scorePageDrift {
+            from {
+                transform: translate3d(-2%, -1%, 0) scale(1);
+            }
+
+            to {
+                transform: translate3d(2%, 2%, 0) scale(1.08);
+            }
+        }
+
+
+        /* ==========================================
+   SCORE GRID - FULL WIDTH
+   DESKTOP: 4 CARDS PER ROW
+========================================== */
+
+        .score-grid {
+            display: grid !important;
+
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+
+            gap: 24px;
+
+            width: 96% !important;
+            max-width: none !important;
+
+            margin: 0 auto 45px;
+
+            box-sizing: border-box;
+        }
+
+
+        /* ==========================================
+   SCORE CARD
+========================================== */
+
+        .score-grid .score-box {
+            --score-hue: 155;
+            --score-opacity: .28;
+
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+
+            width: 100%;
+            min-width: 0;
+            min-height: 125px;
+
+            padding: 25px 20px;
+            box-sizing: border-box;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            background:
+                linear-gradient(rgba(8, 10, 28, .12),
+                    rgba(8, 10, 28, .12)),
+                linear-gradient(150deg,
+                    hsla(var(--score-hue), 92%, 60%, var(--score-opacity)),
+                    hsla(var(--score-hue), 88%, 42%, calc(var(--score-opacity) * .58)) 58%,
+                    hsla(var(--score-hue), 92%, 52%, calc(var(--score-opacity) * .78))) !important;
+
+            -webkit-backdrop-filter: blur(18px) saturate(160%);
+            backdrop-filter: blur(18px) saturate(160%);
+
+            border: 1px solid hsla(var(--score-hue), 90%, 88%, .50);
+            border-radius: 18px;
+
+            text-decoration: none !important;
+
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .55),
+                inset 0 -14px 24px hsla(var(--score-hue), 80%, 15%, .30),
+                0 6px 0 -2px hsla(var(--score-hue), 65%, 24%, .65),
+                0 20px 34px -8px hsla(var(--score-hue), 80%, 10%, .55);
+
+            transition:
+                box-shadow .28s ease,
+                transform .18s ease,
+                filter .18s ease;
+        }
+
+
+        /* ==========================================
+   GLASS HIGHLIGHT
+========================================== */
+
+        .score-grid .score-box::before {
+            content: "";
+            position: absolute;
+
+            left: -20%;
+            right: -20%;
+            top: -30%;
+            height: 75%;
+
+            background: linear-gradient(115deg,
+                    rgba(255, 255, 255, .20),
+                    rgba(255, 255, 255, .03) 55%,
+                    rgba(255, 255, 255, 0));
+
+            transform: rotate(-8deg);
+
+            pointer-events: none;
+            z-index: 1;
+        }
+
+
+        /* ==========================================
+   BOTTOM COLOR GLOW
+========================================== */
+
+        .score-grid .score-box::after {
+            content: "";
+            position: absolute;
+
+            left: 15%;
+            right: 15%;
+            bottom: -30px;
+            height: 60px;
+
+            background: radial-gradient(closest-side,
+                    hsla(var(--score-hue), 90%, 62%, .34),
+                    transparent);
+
+            filter: blur(8px);
+
+            pointer-events: none;
+            z-index: 0;
+        }
+
+
+        /* ==========================================
+   CARD HEADING
+========================================== */
+
+        .score-grid .score-box h3 {
+            position: relative;
+            z-index: 2;
+
+            margin: 0;
+            padding: 0;
+
+            color: #ffffff !important;
+
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 19px;
+            font-weight: 600;
+            letter-spacing: .2px;
+            line-height: 1.5;
+
+            text-align: center;
+
+            text-decoration: none !important;
+
+            text-shadow:
+                0 1px 2px #000,
+                0 2px 5px rgba(0, 0, 0, .85);
+        }
+
+
+        /* ==========================================
+   CARD COLOR PALETTE
+========================================== */
+
+        .score-grid .score-box:nth-child(1) {
+            --score-hue: 155;
+        }
+
+        .score-grid .score-box:nth-child(2) {
+            --score-hue: 215;
+        }
+
+        .score-grid .score-box:nth-child(3) {
+            --score-hue: 275;
+        }
+
+        .score-grid .score-box:nth-child(4) {
+            --score-hue: 330;
+        }
+
+
+        /* ==========================================
+   HOVER - 3D EFFECT
+========================================== */
+
+        .score-grid .score-box:hover {
+            transform: translateY(-3px);
+
+            box-shadow:
+                inset 0 1.5px 0 rgba(255, 255, 255, .65),
+                inset 0 -14px 24px hsla(var(--score-hue), 80%, 15%, .30),
+                0 9px 0 -2px hsla(var(--score-hue), 65%, 24%, .65),
+                0 28px 44px -8px hsla(var(--score-hue), 80%, 10%, .72);
+
+            filter: brightness(1.10);
+        }
+
+
+        /* ==========================================
+   CLICK / PRESS EFFECT
+========================================== */
+
+        .score-grid .score-box:active {
+            transform: translateY(5px) scale(.98);
+
+            box-shadow:
+                inset 0 1px 5px rgba(0, 0, 0, .25),
+                0 2px 0 -1px hsla(var(--score-hue), 65%, 24%, .65),
+                0 5px 10px rgba(0, 0, 0, .30);
+
+            filter: brightness(.90);
+        }
+
+
+        /* ==========================================
+   TABLET - 2 CARDS PER ROW
+========================================== */
+
+        @media (max-width: 900px) {
+
+            .score-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+
+                width: 94% !important;
+                gap: 20px;
+            }
+
+        }
+
+
+        /* ==========================================
+   MOBILE - 1 CARD PER ROW
+========================================== */
+
+        @media (max-width: 600px) {
+
+            .score-grid {
+                grid-template-columns: 1fr !important;
+
+                width: 92% !important;
+                gap: 19px;
+            }
+
+            .score-grid .score-box {
+                min-height: 100px;
+            }
+
+            .score-grid .score-box h3 {
+                font-size: 18px;
+            }
+
+        }
+
+
+        /* ==========================================
+   REDUCED MOTION
+========================================== */
+
+        @media (prefers-reduced-motion: reduce) {
+
+            body::before {
+                animation: none;
+            }
+
+            .score-grid .score-box {
+                transition: none;
+            }
+
+        }
+    </style>
 </head>
+
 <body>
-<!-- 🔥 Navigation -->
-<div class="nav">
-    <a href="/live">Back</a>
-    <a href="/">Home</a>
-    <a href="/stats">Scorecard</a>
-    <a href="/team">Team Info</a>
-    <a href="/fixture">Match Fixture</a>
-    <a href="/points">Points Table</a>
-    <a href="/comments">Comments</a>
-    
-</div>
-<h2 class="fixture-title">🏏 Score Update Panel</h2>
 
-<div class="score-grid">
+    <!-- NAVIGATION -->
 
-    <a href="/new-match" class="team-card score-box">
-        <h3>➕ New Match</h3>
-    </a>
-    <a href="/new-match-2" class="team-card score-box">
-        <h3>➕ New Match 2</h3>
-    </a>
-    <a href="/team-manager" class="team-card score-box">
-        <h3>👥 Teams</h3>
-    </a>
+    <div class="nav">
+        <a href="/live">Back</a>
+        <a href="/">Home</a>
+        <a href="/stats">Scorecard</a>
+        <a href="/team">Team Info</a>
+        <a href="/fixture">Match Fixture</a>
+        <a href="/points">Points Table</a>
+        <a href="/comments">Comments</a>
 
-    <a href="/history" class="team-card score-box">
-        <h3>📜 History</h3>
-    </a>
+        {% include "partials/nav_admin.html" %}
+    </div>
 
-</div>
+
+    <!-- PAGE HEADING -->
+
+    <h2 class="fixture-title">🏏 Score Update Panel</h2>
+
+
+    <!-- SCORE UPDATE CARDS -->
+
+    <div class="score-grid">
+
+        <a href="/new-match" class="team-card score-box">
+            <h3>➕ New Match</h3>
+        </a>
+
+        <a href="/new-match-2" class="team-card score-box">
+            <h3>➕ New Match 2</h3>
+        </a>
+
+        <a href="/team-manager" class="team-card score-box">
+            <h3>👥 Teams</h3>
+        </a>
+
+        <a href="/history" class="team-card score-box">
+            <h3>📜 History</h3>
+        </a>
+
+    </div>
+
+
+    <!-- CONFIRM MODAL -->
 
     <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+
+
+    <!-- HEARTBEAT -->
+
+    <script>
+        fetch("/heartbeat");
+
+        setInterval(() => {
+            fetch("/heartbeat");
+        }, 5000);
+    </script>
+
 </body>
-<script>
 
-fetch("/heartbeat")
-
-setInterval(()=>{
-
-fetch("/heartbeat")
-
-},5000)
-
-</script>
 </html>

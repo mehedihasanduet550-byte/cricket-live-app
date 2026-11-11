@@ -729,6 +729,12 @@ app.secret_key = "cricket_live_super_secret_2026"
        # ]="no-cache,no-store,must-revalidate"
 
     #return response
+# 🔥 login thakle sob page-er nav-e "Live Score Update" + "Logout" dekhanor jonno
+@app.context_processor
+def inject_login_state():
+    return {"is_logged_in": bool(session.get("admin"))}
+
+
 @app.after_request
 def add_header(response):
 
@@ -1853,11 +1859,51 @@ def fixture():
     final_a, final_b = get_final_teams()
     grand_time, grand_date = get_grand_final()
 
+    # 🔥 Final match (stage = final ba label = Grand Final) alada Final section e dekhabe.
+    #    Baki shob (group + knockout, placeholder nam soho) upor-er list e.
+    def is_final(m):
+        return m["stage"] == "final" or _fx_label_parts(m.get("label", ""))["text"].strip().lower() == "grand final"
+
+    # 🔥 group match-e "Group A" tag dekhanor jonno: duita team ek-i group-e thakle sheta
+    team_group = {_norm_team(e["name"]): e["group"] for e in _read_group_entries()}
+
+    for m in fixtures:
+        g1 = team_group.get(_norm_team(m["team1"]))
+        g2 = team_group.get(_norm_team(m["team2"]))
+        auto_group = ("Group " + g1.upper()) if g1 and g1 == g2 else "Group"
+
+        # label: "Group A - Qualifier" -> Group A tag + Qualifier tag; "Semi Final 1" -> label
+        lp = _fx_label_parts(m.get("label", ""))
+        explicit = ("Group " + lp["group"].upper()) if lp["group"] else ""
+
+        m["label_show"] = lp["text"]
+        m["is_qualifier"] = lp["qualifier"]
+
+        if m["stage"] == "group":
+            # Group select na kore sudhu Qualifier dile Group tag dekhabo na
+            m["group_tag"] = explicit or ("" if lp["qualifier"] else auto_group)
+        else:
+            m["group_tag"] = explicit                 # Knockout / Final-e sudhu select kora thakle
+        m["group_name"] = m["group_tag"]
+
+    finals = [m for m in fixtures if is_final(m)]
+    fixtures = [m for m in fixtures if not is_final(m)]
+
+    # 🔥 Final-er team ekhono nirdharito na (Winner SF1 ityadi lekha) -- kintu group + knockout
+    #    shesh hoye gele ager moto auto final team boshe jabe
+    real = {_norm_team(t) for t in load_teams()}
+
+    if final_a and final_b and all_knockout_done:
+        for m in finals:
+            if _norm_team(m["team1"]) not in real or _norm_team(m["team2"]) not in real:
+                m["team1"], m["team2"] = final_a, final_b
+
     return render_template(
 
         "fixture.html",
 
         fixtures=fixtures,
+        finals=finals,
 
         final_a=final_a,
         final_b=final_b,
@@ -2330,6 +2376,9 @@ def _clean_group(value):
     return g[:20]
 
 
+MIN_GROUPS = ["a", "b", "c", "d"]   # dropdown-e egulo shobsomoy thakbe (aro lagle "Notun group")
+
+
 def _group_sort_key(g):
     return (len(g), g)          # a, b, c ... z, tarpor 10, 11 ...
 
@@ -2385,7 +2434,7 @@ def group_page():
     keys = sorted({e["group"] for e in entries}, key=_group_sort_key)
 
     groups = [
-        (k, ("Group " + k.upper()) if k else "No group", [e for e in entries if e["group"] == k])
+        (k, ("Group " + k.upper()) if k else "No group", sorted([e for e in entries if e["group"] == k], key=lambda e: e["name"].lower()))
         for k in keys
     ]
 
@@ -2393,14 +2442,17 @@ def group_page():
     used = {_norm_team(e["name"]) for e in entries}
     available = sorted(t for t in load_teams() if _norm_team(t) not in used)
 
+    # dropdown-e shobsomoy minimum 4 ta group (a, b, c, d) thakbe, khali thakleo
+    dropdown_keys = sorted({k for k in keys if k} | set(MIN_GROUPS), key=_group_sort_key)
+
     return render_template(
         "group.html",
         groups=groups,
         total=len(entries),
         available=available,
         all_teams=sorted(load_teams()),
-        group_keys=[k for k in keys if k],
-        next_group=_next_group_key(set(keys)),
+        group_keys=dropdown_keys,
+        next_group=_next_group_key(set(dropdown_keys)),
     )
 
 
@@ -2480,6 +2532,195 @@ def delete_group_team(index):
 
     return redirect("/group")
 
+def _fx_clean(value):
+    """Team / label-er vitor theke '|' ar newline soriye dei (file format na vange).
+    Alada 'vs' shobdo-o soriye dei, karon file-e 'A vs B' diye team alada kora hoy."""
+    import re
+    v = (value or "").replace("|", " ")
+    v = re.sub(r"(?i)\bvs\.?(?=\s|$)", " ", v)
+    return " ".join(v.split())
+
+
+def _fx_team(form, key):
+    """Team-er nam (dropdown list theke ba nijer lekha, jemon Winner QF1). Lekha nam kono asol
+    team-er sathe mille (boro/chhoto hater farak charai) oi asol nam-i boshe."""
+    v = (form.get(key) or "").strip()
+    if v == "__custom__":                       # purono form-er jonno
+        v = form.get(key + "_custom")
+    v = _fx_clean(v)
+
+    for t in load_teams():
+        if _norm_team(t) == _norm_team(v):
+            return t
+
+    return v
+
+
+def _fx_stage(raw):
+    raw = (raw or "").lower()
+    if "knock" in raw:
+        return "knockout"
+    if "final" in raw:
+        return "final"
+    return "group"
+
+
+FX_PRESET_KINDS = ["Quarter Final 1", "Quarter Final 2", "Quarter Final 3", "Quarter Final 4",
+                   "Semi Final 1", "Semi Final 2"]
+
+
+def _fx_label_parts(label):
+    """Label -> {"group": "a" ba "", "knockout": bool, "qualifier": bool, "text": baki lekha}
+    "Group A - Qualifier" / "Group B - Knockout - Qualifier" / "Semi Final 1" / "Group A" shob bujhe."""
+    import re
+
+    group = ""
+    knockout = qualifier = False
+    rest = []
+
+    for tok in [t.strip() for t in (label or "").split(" - ") if t.strip()]:
+        low = tok.lower()
+        m = re.fullmatch(r"group\s+([a-z0-9_-]{1,20})", low)
+        if m and not group:
+            group = m.group(1)
+        elif low == "knockout":
+            knockout = True
+        elif low == "qualifier":
+            qualifier = True
+        else:
+            rest.append(tok)
+
+    return {"group": group, "knockout": knockout, "qualifier": qualifier, "text": " - ".join(rest)}
+
+
+def _fx_parse_line(line):
+    """fixture.txt-er ek line -> dict. Edit modal e dropdown / date / time bhorar jonno.
+    Format: Team1 vs Team2 | 7:00 PM | 5 Nov | group | label | status"""
+    from datetime import datetime
+
+    parts = [p.strip() for p in line.strip().split("|")]
+
+    team1 = team2 = ""
+    if "vs" in parts[0].lower():
+        t = parts[0].split("vs")
+        team1, team2 = t[0].strip(), t[1].strip()
+
+    time_raw = parts[1] if len(parts) > 1 else ""
+    date_raw = parts[2] if len(parts) > 2 else ""
+    stage = _fx_stage(parts[3]) if len(parts) > 3 else "group"
+    label = parts[4] if len(parts) > 4 else ""
+    status = parts[5] if len(parts) > 5 else ""
+
+    # label-er vitor theke Group / Knockout / Qualifier / baki lekha
+    lp = _fx_label_parts(label)
+    grp, ko, qual, text = lp["group"], lp["knockout"], lp["qualifier"], lp["text"]
+
+    # edit modal-er prothom dropdown: Group / Quarter Final 1.. / Semi Final 1.. / Final
+    has_tag = bool(grp or ko or qual)
+    if stage == "final":
+        kind = "Final"
+    elif has_tag or stage == "group":
+        kind = "group"
+    elif text:
+        kind = text                      # Quarter Final 1 ba onno purono label
+    else:
+        kind = "group"
+        ko = True                        # label chhara knockout -> Knockout checkbox
+
+    # manage list-er niche chhoto lekha
+    bits = []
+    if grp:
+        bits.append("Group " + grp.upper())
+    if ko or stage == "knockout":
+        bits.append("Knockout")
+    if qual:
+        bits.append("Qualifier")
+    if stage == "final":
+        bits.append("Final")
+    if not bits and stage == "group" and not text:
+        bits.append("Group")
+    if text:
+        bits.append(text)
+    meta = " · ".join(bits)
+
+    date_iso = ""
+    try:
+        d = datetime.strptime(f"{date_raw.title()} 2026", "%d %b %Y")
+        date_iso = d.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+
+    time24 = ""
+    for fmt in ("%I:%M %p", "%I %p", "%I:%M%p", "%I%p", "%H:%M"):
+        try:
+            time24 = datetime.strptime(time_raw.upper(), fmt).strftime("%H:%M")
+            break
+        except Exception:
+            pass
+
+    return {
+        "team1": team1, "team2": team2,
+        "time": time_raw, "date": date_raw,
+        "stage": stage, "label": label, "status": status,
+        "kind": kind, "grp": grp, "ko": ko, "qual": qual, "meta": meta,
+        "date_iso": date_iso, "time24": time24,
+    }
+
+
+def _fx_build_line(form, status=""):
+    """Form (dropdown, date, time, stage, label) theke fixture.txt-er line banay.
+    Kono field vul/khali hole None."""
+    from datetime import datetime
+
+    t1 = _fx_team(form, "team1")
+    t2 = _fx_team(form, "team2")
+
+    if not t1 or not t2:
+        return None
+
+    # ek-i asol team nijer biruddhe hobe na (kintu "TBD vs TBD" type placeholder cholbe)
+    if _norm_team(t1) == _norm_team(t2) and _norm_team(t1) in {_norm_team(x) for x in load_teams()}:
+        return None
+
+    try:
+        d = datetime.strptime((form.get("date") or "").strip(), "%Y-%m-%d")
+        tm = datetime.strptime((form.get("time") or "").strip(), "%H:%M")
+    except Exception:
+        return None
+
+    time_s = tm.strftime("%I:%M %p").lstrip("0")      # 7:00 PM
+    date_s = f"{d.day} {d.strftime('%b')}"            # 5 Nov
+    kind = (form.get("kind") or "").strip()
+
+    if kind == "group":
+        # Group select: dwitiyo box-er Knockout / Qualifier (jekono ekta ba duita) + Group A..J (shudhu ekta)
+        g = _clean_group(form.get("grp"))
+        ko = bool(form.get("ko"))
+        qual = bool(form.get("qual"))
+        label = " - ".join(x for x in [
+            ("Group " + g.upper()) if g else "",
+            "Knockout" if ko else "",
+            "Qualifier" if qual else "",
+        ] if x)
+        stage = "knockout" if ko else "group"
+    elif kind == "Final":
+        stage, label = "final", "Grand Final"
+    elif kind:
+        stage, label = "knockout", _fx_clean(kind)      # Quarter Final 1.. / Semi Final 1..
+    else:                                               # purono form (stage + free label)
+        stage = _fx_stage(form.get("stage"))
+        label = _fx_clean(form.get("label"))
+
+    parts = [f"{t1} vs {t2}", time_s, date_s, stage]
+
+    if label or status:
+        parts.append(label)
+    if status:
+        parts.append(status)
+
+    return " | ".join(parts)
+
+
 @app.route("/fixture-manage")
 def fixture_manage():
 
@@ -2526,28 +2767,51 @@ def fixture_manage():
 
     order = sorted(range(len(entries)), key=lambda k: (when(k), k))
 
-    fixtures = [entries[k][1] for k in order]
-    indexes = [entries[k][0] for k in order]
-    statuses = [
-        parsed[k].get("status", "") if k < len(parsed) else ""
-        for k in order
-    ]
+    rows = []
+    for k in order:
+
+        idx, line = entries[k]
+        fx = _fx_parse_line(line)
+
+        st = parsed[k].get("status", "") if k < len(parsed) else ""
+        fx["idx"] = idx
+        fx["done"] = ("completed" in line.lower()) or st == "completed"
+        fx["running"] = (st == "running") and not fx["done"]
+
+        rows.append(fx)
+
+    # group dropdown-e shobsomoy minimum a, b, c, d (ar ja ja group toiri hoyeche)
+    group_keys = sorted(
+        {e["group"] for e in _read_group_entries() if e["group"]} | set("abcdefghij"),
+        key=_group_sort_key
+    )
 
     return render_template(
         "fixture_manage.html",
-        fixtures=fixtures,
-        indexes=indexes,
-        statuses=statuses
+        rows=rows,
+        teams=sorted(load_teams(), key=lambda t: t.lower()),
+        group_keys=group_keys,
     )
 
 @app.route("/add-fixture", methods=["POST"])
 def add_fixture():
 
-    data = request.form.get("fixture")
+    path = "data/fixture.txt"
 
-    if data:
-        with open("data/fixture.txt", "a") as f:
-            f.write(data + "\n")
+    if request.form.get("team1"):                 # notun dropdown form
+        line = _fx_build_line(request.form)
+    else:                                         # ager form (haate lekha line)
+        line = (request.form.get("fixture") or "").strip() or None
+
+    if line:
+        try:
+            with open(path, "r") as f:
+                existing = {l.strip().lower() for l in f}
+        except FileNotFoundError:
+            existing = set()
+
+        if line.lower() not in existing:          # double-click e duplicate hobe na
+            _append_line(path, line)
 
     return redirect("/fixture-manage")
 
@@ -2570,20 +2834,46 @@ def delete_fixture(index):
 @app.route("/edit-fixture/<int:index>", methods=["POST"])
 def edit_fixture(index):
 
-    new = request.form.get("fixture")
-
     path = "data/fixture.txt"
 
     with open(path, "r") as f:
         lines = f.readlines()
 
     if 0 <= index < len(lines):
-        lines[index] = new + "\n"
 
-    with open(path, "w") as f:
-        f.writelines(lines)
+        if request.form.get("team1"):
+            # purono status (completed/running) ta rekhe dei
+            old = _fx_parse_line(lines[index]) if lines[index].strip() else {}
+            new = _fx_build_line(request.form, status=old.get("status", ""))
+        else:
+            new = (request.form.get("fixture") or "").strip() or None
+
+        if new:
+            lines[index] = new + "\n"
+
+            with open(path, "w") as f:
+                f.writelines(lines)
 
     return redirect("/fixture-manage")
+
+
+@app.errorhandler(404)
+def _team_image_placeholder(e):
+    """Team-er logo na thakle (jemon 'Winner QF1' placeholder) broken image-er bodole
+    ekta '?' logo dekhai -- fixture, home shob page-e eksathe kaj kore."""
+    if request.path.startswith("/static/images/teams/"):
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+            '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+            '<stop offset="0" stop-color="#5b6b8c"/><stop offset="1" stop-color="#2b3550"/>'
+            '</linearGradient></defs>'
+            '<circle cx="50" cy="50" r="46" fill="url(#g)" stroke="#ffffff" stroke-opacity=".6" stroke-width="3"/>'
+            '<text x="50" y="66" text-anchor="middle" font-size="52" font-weight="bold" '
+            'font-family="Arial,sans-serif" fill="#ffffff">?</text></svg>'
+        )
+        return app.response_class(svg, status=200, mimetype="image/svg+xml")
+    return e
+
 @app.route("/sponsor-images")
 def sponsor_images():
 
@@ -7546,7 +7836,12 @@ def points():
     groups = []
     for key in sorted(groups_map, key=lambda k: (len(k), k)):
         teams = groups_map[key]
-        teams.sort(key=lambda x: (x["pts"], float(x["nrr"])), reverse=True)
+        # 🔥 point ja'der ache tara age (PTS, tarpor NRR), ja'der point nai tara nam onujayi A-Z
+        scored = [t for t in teams if t["pts"] > 0]
+        zero = [t for t in teams if t["pts"] <= 0]
+        scored.sort(key=lambda x: (x["pts"], float(x["nrr"])), reverse=True)
+        zero.sort(key=lambda x: x["team"].lower())
+        teams = scored + zero
 
         # 🔥 mark top 2
         for i, t in enumerate(teams):

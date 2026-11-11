@@ -1,12 +1,386 @@
+
 <!DOCTYPE html>
 <html>
 <head>
     <title>Live Control</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/confirm-modal.css') }}">
+
+    <style>
+
+/* ==========================================
+   ADMIN PANEL BACKGROUND
+========================================== */
+
+body {
+    background: linear-gradient(
+        160deg,
+        #0a0e2a 0%,
+        #1a0b3b 50%,
+        #06242c 100%
+    ) fixed !important;
+
+    min-height: 100vh;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: -10%;
+    z-index: -1;
+    pointer-events: none;
+
+    background:
+        radial-gradient(circle at 12% 10%, rgba(255, 64, 200, .20), transparent 38%),
+        radial-gradient(circle at 90% 22%, rgba(0, 229, 255, .18), transparent 36%),
+        radial-gradient(circle at 18% 62%, rgba(255, 171, 0, .14), transparent 38%),
+        radial-gradient(circle at 88% 82%, rgba(124, 77, 255, .22), transparent 40%),
+        radial-gradient(circle at 50% 100%, rgba(0, 230, 118, .12), transparent 36%);
+
+    animation: adminDrift 26s ease-in-out infinite alternate;
+}
+
+@keyframes adminDrift {
+    from {
+        transform: translate3d(-2%, -1%, 0) scale(1);
+    }
+
+    to {
+        transform: translate3d(2%, 2%, 0) scale(1.08);
+    }
+}
+
+
+/* ==========================================
+   ADMIN PANEL HEADING
+========================================== */
+
+.admin-panel-heading {
+    width: fit-content;
+    min-width: 220px;
+
+    margin: 30px auto 35px;
+    padding: 15px 35px;
+
+    text-align: center;
+
+    background: linear-gradient(
+        150deg,
+        rgba(0, 220, 180, .65),
+        rgba(0, 100, 120, .45)
+    );
+
+    border: 1px solid rgba(150, 255, 230, .4);
+    border-radius: 16px;
+
+    box-shadow:
+        0 8px 0 rgba(0, 70, 70, .7),
+        0 14px 25px rgba(0, 0, 0, .35),
+        inset 0 1px 3px rgba(255, 255, 255, .3);
+
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.admin-panel-heading h2 {
+    margin: 0;
+    color: #ffffff;
+
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: .5px;
+
+    text-shadow: 0 2px 5px rgba(0, 0, 0, .8);
+}
+
+
+/* ==========================================
+   ADMIN PANEL GRID
+   DESKTOP: 4 CARDS FULL WIDTH
+========================================== */
+
+.admin-panel-grid {
+    display: grid !important;
+
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+
+    gap: 24px;
+
+    width: 96% !important;
+    max-width: none !important;
+
+    margin: 0 auto 45px;
+
+    box-sizing: border-box;
+}
+
+
+/* ==========================================
+   ADMIN PANEL CARD
+========================================== */
+
+.admin-panel-card {
+    --admin-hue: 155;
+    --admin-card-opacity: 0.28;
+
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+
+    width: 100%;
+    min-width: 0;
+    min-height: 105px;
+
+    padding: 25px 20px;
+    box-sizing: border-box;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background:
+        linear-gradient(
+            rgba(8, 10, 28, .12),
+            rgba(8, 10, 28, .12)
+        ),
+        linear-gradient(
+            150deg,
+            hsla(var(--admin-hue), 92%, 60%, var(--admin-card-opacity)),
+            hsla(var(--admin-hue), 88%, 42%, calc(var(--admin-card-opacity) * .58)) 58%,
+            hsla(var(--admin-hue), 92%, 52%, calc(var(--admin-card-opacity) * .78))
+        ) !important;
+
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+
+    border: 1px solid hsla(var(--admin-hue), 90%, 88%, .50);
+    border-radius: 18px;
+
+    box-shadow:
+        inset 0 1.5px 0 rgba(255, 255, 255, .55),
+        inset 0 -14px 24px hsla(var(--admin-hue), 80%, 15%, .30),
+        0 6px 0 -2px hsla(var(--admin-hue), 65%, 24%, .65),
+        0 20px 34px -8px hsla(var(--admin-hue), 80%, 10%, .55);
+
+    transition:
+        box-shadow .28s ease,
+        transform .18s ease,
+        filter .18s ease;
+}
+
+
+/* ==========================================
+   GLASS HIGHLIGHT
+========================================== */
+
+.admin-panel-card::before {
+    content: "";
+    position: absolute;
+
+    left: -20%;
+    right: -20%;
+    top: -30%;
+    height: 75%;
+
+    background: linear-gradient(
+        115deg,
+        rgba(255, 255, 255, .20),
+        rgba(255, 255, 255, .03) 55%,
+        rgba(255, 255, 255, 0)
+    );
+
+    transform: rotate(-8deg);
+
+    pointer-events: none;
+    z-index: 1;
+}
+
+
+/* ==========================================
+   BOTTOM COLOR GLOW
+========================================== */
+
+.admin-panel-card::after {
+    content: "";
+    position: absolute;
+
+    left: 15%;
+    right: 15%;
+    bottom: -30px;
+    height: 60px;
+
+    background: radial-gradient(
+        closest-side,
+        hsla(var(--admin-hue), 90%, 62%, .34),
+        transparent
+    );
+
+    filter: blur(8px);
+
+    pointer-events: none;
+    z-index: 0;
+}
+
+
+/* ==========================================
+   CARD TEXT
+========================================== */
+
+.admin-panel-card-link {
+    position: absolute;
+    inset: 0;
+
+    z-index: 2;
+
+    width: 100%;
+    height: 100%;
+
+    padding: 12px;
+    box-sizing: border-box;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: #ffffff !important;
+    text-decoration: none !important;
+
+    text-align: center;
+
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    line-height: 1.5;
+
+    cursor: pointer;
+
+    text-shadow:
+        0 1px 2px #000,
+        0 2px 5px rgba(0, 0, 0, .85);
+
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+
+/* ==========================================
+   HOVER - 3D EFFECT
+========================================== */
+
+.admin-panel-card:hover {
+    transform: translateY(-3px);
+
+    box-shadow:
+        inset 0 1.5px 0 rgba(255, 255, 255, .65),
+        inset 0 -14px 24px hsla(var(--admin-hue), 80%, 15%, .30),
+        0 9px 0 -2px hsla(var(--admin-hue), 65%, 24%, .65),
+        0 28px 44px -8px hsla(var(--admin-hue), 80%, 10%, .72);
+
+    filter: brightness(1.10);
+}
+
+
+/* ==========================================
+   CLICK / PRESS EFFECT
+========================================== */
+
+.admin-panel-card:active {
+    transform: translateY(5px) scale(.98);
+
+    box-shadow:
+        inset 0 1px 5px rgba(0, 0, 0, .25),
+        0 2px 0 -1px hsla(var(--admin-hue), 65%, 24%, .65),
+        0 5px 10px rgba(0, 0, 0, .30);
+
+    filter: brightness(.90);
+}
+
+
+/* ==========================================
+   TEAM INFO COLOR PALETTE
+========================================== */
+
+.admin-panel-card:nth-child(1)  { --admin-hue: 155; }
+.admin-panel-card:nth-child(2)  { --admin-hue: 215; }
+.admin-panel-card:nth-child(3)  { --admin-hue: 275; }
+.admin-panel-card:nth-child(4)  { --admin-hue: 330; }
+.admin-panel-card:nth-child(5)  { --admin-hue: 50; }
+.admin-panel-card:nth-child(6)  { --admin-hue: 190; }
+.admin-panel-card:nth-child(7)  { --admin-hue: 22; }
+.admin-panel-card:nth-child(8)  { --admin-hue: 100; }
+.admin-panel-card:nth-child(9)  { --admin-hue: 155; }
+.admin-panel-card:nth-child(10) { --admin-hue: 215; }
+.admin-panel-card:nth-child(11) { --admin-hue: 275; }
+.admin-panel-card:nth-child(12) { --admin-hue: 330; }
+
+
+/* ==========================================
+   TABLET - 2 CARDS PER ROW
+========================================== */
+
+@media (max-width: 900px) {
+
+    .admin-panel-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+
+        width: 94% !important;
+        gap: 20px;
+    }
+
+}
+
+
+/* ==========================================
+   MOBILE - 1 CARD PER ROW
+========================================== */
+
+@media (max-width: 600px) {
+
+    .admin-panel-grid {
+        grid-template-columns: 1fr !important;
+
+        width: 92% !important;
+        gap: 19px;
+    }
+
+    .admin-panel-card {
+        min-height: 90px;
+    }
+
+    .admin-panel-card-link {
+        font-size: 17px;
+    }
+
+}
+
+
+/* ==========================================
+   REDUCED MOTION
+========================================== */
+
+@media (prefers-reduced-motion: reduce) {
+
+    body::before {
+        animation: none;
+    }
+
+    .admin-panel-card {
+        transition: none;
+    }
+
+}
+
+    </style>
 </head>
+
 <body>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- NAVIGATION -->
 
 <div class="nav">
     <a href="/">Home</a>
@@ -15,59 +389,109 @@
     <a href="/fixture">Match Fixture</a>
     <a href="/points">Points Table</a>
     <a href="/comments">Comments</a>
-    
+
+    {% include "partials/nav_admin.html" %}
 </div>
 
+
+<!-- ADMIN PANEL HEADING -->
 
 <h2 class="fixture-title">Admin Panel</h2>
 
-<!-- 🔥 CARDS -->
-<div class="matches">
 
-    <div class="team-card row-card center-card">
-        <a href="/live-score">🏏 Score Update</a>
-    </div>
-    <div class="team-card row-card center-card">
-        <a href="/all-match-files">👤Update Player of the match</a>
-    </div>
-    <div class="team-card row-card center-card">
-        <a href="/group">🏳️ Group Update</a>
-    </div>
-    <div class="team-card row-card center-card">
-        <a href="/manage-teams">🏳️ Add Teams</a>
-    </div>
-    <div class="team-card row-card center-card">
-        <a href="/player-images">🖼️ Player Image Update</a>
+<!-- ADMIN PANEL CARDS -->
+
+<div class="admin-panel-grid">
+
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/live-score">
+            🏏 Score Update
+        </a>
     </div>
 
-    <div class="team-card row-card center-card">
-        <a href="/team-logos">👤 Logo Update</a>
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/all-match-files">
+            👤 Update Player of the Match
+        </a>
     </div>
 
-    <div class="team-card row-card center-card">
-        <a href="/fixture-manage">📅 Fixture Management</a>
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/group">
+            🏳️ Group Update
+        </a>
     </div>
 
-    <div class="team-card row-card center-card">
-         <a href="/squad">👥 Squad Update</a>
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/manage-teams">
+            🏳️ Add Teams
+        </a>
     </div>
 
-    <div class="team-card row-card center-card">   
-         <a href="/sponsor-images">🧾 Sponsor Image Update</a>   
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/player-images">
+            🖼️ Player Image Update
+        </a>
     </div>
 
-    <div class="team-card row-card center-card">   
-         <a href="/kcl-update-news">🧾 KCL News Image Update</a>   
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/team-logos">
+            👤 Logo Update
+        </a>
     </div>
 
-    <div class="team-card row-card center-card">   
-         <a href="/banner-images">🧾 Banner Update</a>   
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/fixture-manage">
+            📅 Fixture Management
+        </a>
     </div>
-    <div class="team-card row-card center-card">   
-         <a href="/comments-admin">🧾 Comments Admin</a>   
+
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/squad">
+            👥 Squad Update
+        </a>
     </div>
+
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/sponsor-images">
+            🧾 Sponsor Image Update
+        </a>
+    </div>
+
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/kcl-update-news">
+            🧾 KCL News Image Update
+        </a>
+    </div>
+
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/banner-images">
+            🧾 Banner Update
+        </a>
+    </div>
+
+    <div class="admin-panel-card">
+        <a class="admin-panel-card-link" href="/comments-admin">
+            🧾 Comments Admin
+        </a>
+    </div>
+
 </div>
 
-    <script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+
+<!-- HEARTBEAT -->
+
+<script>
+    fetch("/heartbeat");
+
+    setInterval(() => {
+        fetch("/heartbeat");
+    }, 5000);
+</script>
+
+
+<!-- CONFIRM MODAL -->
+
+<script src="{{ url_for('static', filename='css/js/confirm-modal.js') }}"></script>
+
 </body>
 </html>
