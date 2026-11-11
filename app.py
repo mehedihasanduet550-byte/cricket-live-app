@@ -385,98 +385,7 @@ def full_convert():
 
     return "FULL EXACT DATA STRUCTURE CONVERTED"
 
-def sync_db():
 
-    import sqlite3
-    import os
-
-    conn = sqlite3.connect("data/cricket.db")
-
-    c = conn.cursor()
-
-    # =====================================
-    # CREATE TABLE
-    # =====================================
-
-    c.execute("""
-
-    CREATE TABLE IF NOT EXISTS files (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        folder_name TEXT,
-
-        file_name TEXT,
-
-        full_path TEXT,
-
-        content TEXT
-
-    )
-
-    """)
-
-    # =====================================
-    # CLEAR OLD
-    # =====================================
-
-    c.execute("DELETE FROM files")
-
-    root = "data"
-
-    # =====================================
-    # WALK THROUGH DATA
-    # =====================================
-
-    for current_path, dirs, files in os.walk(root):
-
-        relative_folder = os.path.relpath(current_path, root)
-
-        if relative_folder == ".":
-            relative_folder = "root"
-
-        for file in files:
-
-            # 🔥 SKIP DB ITSELF
-            if file == "cricket.db":
-                continue
-
-            full_path = os.path.join(current_path, file)
-
-            try:
-
-                with open(full_path, "r", encoding="utf-8") as f:
-
-                    content = f.read()
-
-                c.execute("""
-
-                INSERT INTO files (
-
-                    folder_name,
-                    file_name,
-                    full_path,
-                    content
-
-                )
-
-                VALUES (?, ?, ?, ?)
-
-                """, (
-
-                    relative_folder,
-                    file,
-                    full_path,
-                    content
-
-                ))
-
-            except:
-                pass
-
-    conn.commit()
-
-    conn.close()
 # 🔥 SAFE FILE WRITE
 #  FIX: on Windows os.replace() raises PermissionError when another request (live page, home
 #  page refresh, scorer) has the file open for a split second. The write then failed half way
@@ -7852,10 +7761,7 @@ def points():
         update_nrr_stats()
     except:
         pass
-    try:
-        sync_db()
-    except:
-        pass
+    
     groups_map = {}      # group key -> [team data]  (joto khushi group)
 
     try:
