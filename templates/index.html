@@ -423,30 +423,51 @@ h3 {
 
                     <!-- VS + STAGE -->
                     <div class="vs-box">
-
+                    
                         <div class="vs">VS</div>
-
-                        {% if match.stage == "knockout" %}
-                        <div class="stage-tag knockout">
-                            Knock Out
-                        </div>
-
-                        {% if match.label %}
-                        <div style="
-                                    font-size:18px;
-                                    color:#0a0a0a;
-                                    margin-top:4px;
-                                ">
-                            {{ match.label }}
-                        </div>
+                    
+                        {% if match.stage == "final" or (match.label_show and match.label_show|lower == "grand final") %}
+                    
+                        <div class="stage-tag stage-green"
+                            style="background:linear-gradient(135deg,#6a3ec2,#a4308a) !important; color:#fff !important; font-weight:600; border:1.5px solid #ffffff00; box-shadow:0 1px 5px rgba(0,0,0,.5);">
+                            FINAL 🏆</div>
+                    
+                        {% if match.group_tag %}
+                        <div class="stage-tag group" style="margin-top:3px;">{{ match.group_tag }}</div>
                         {% endif %}
-
-                        {% elif match.stage == "final" %}
-                        <div class="stage-tag final">
-                            Final 🏆
-                        </div>
+                    
+                        {% if match.label_show and match.label_show|lower != "grand final" %}
+                        <div
+                            style="font-size:18px; color:#f4f6ff; font-weight:600; text-shadow:0 1px 3px rgba(0,0,0,.5); margin-top:4px;">
+                            {{ match.label_show }}</div>
                         {% endif %}
-
+                    
+                        {% else %}
+                    
+                        {% if match.group_tag %}
+                        <div class="stage-tag group">{{ match.group_tag }}</div>
+                        {% endif %}
+                    
+                        {% if match.is_knockout %}
+                        <div class="stage-tag knockout">Knock Out</div>
+                        {% endif %}
+                    
+                        {% if match.is_qualifier %}
+                        <div class="stage-tag qualifier">Qualifier</div>
+                        {% endif %}
+                    
+                        {% if match.label_show and ("final" in match.label_show|lower) %}
+                        <div class="stage-tag stage-green"
+                            style="background:linear-gradient(135deg,#6a3ec2,#a4308a) !important; color:#fff !important; font-weight:600; border:1.5px solid #ffffff00; box-shadow:0 1px 5px rgba(0,0,0,.5);">
+                            {{ match.label_show }}</div>
+                        {% elif match.label_show %}
+                        <div
+                            style="font-size:22px; color:#f4f6ff; font-weight:600; text-shadow:0 1px 3px rgba(0,0,0,.5); margin-top:4px;">
+                            {{ match.label_show }}</div>
+                        {% endif %}
+                    
+                        {% endif %}
+                    
                     </div>
 
                     <div class="team">

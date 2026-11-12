@@ -880,6 +880,41 @@ def get_home_matches():
     return live_matches, completed_match
 
 
+def enrich_fixture_tags(fixtures):
+    """Fixture page-er moto Group / Knock Out / Qualifier / label field-gulo toiri kore,
+    jate Home page-er "Next Match" card-o hubohu Fixture page-er moto tag dekhay.
+    (fixture() route-er ekdom same logic.)"""
+
+    team_group = {_norm_team(e["name"]): e["group"] for e in _read_group_entries()}
+
+    for m in fixtures:
+        g1 = team_group.get(_norm_team(m["team1"]))
+        g2 = team_group.get(_norm_team(m["team2"]))
+        auto_group = ("Group " + g1.upper()) if g1 and g1 == g2 else "Group"
+
+        # label: "Group A - Qualifier" -> Group A tag + Qualifier tag; "Semi Final 1" -> label
+        lp = _fx_label_parts(m.get("label", ""))
+        explicit = ("Group " + lp["group"].upper()) if lp["group"] else ""
+
+        m["label_show"] = lp["text"]
+        m["is_qualifier"] = lp["qualifier"]
+
+        m["is_round"] = "final" in (lp["text"] or "").lower()
+        m["is_knockout"] = bool(
+            lp["knockout"]
+            or (m["stage"] == "knockout" and not lp["text"])   # purano line: label chhara knockout
+        )
+
+        if m["stage"] == "group":
+            # Group select na kore sudhu Qualifier dile Group tag dekhabo na
+            m["group_tag"] = explicit or ("" if lp["qualifier"] else auto_group)
+        else:
+            m["group_tag"] = explicit
+        m["group_name"] = m["group_tag"]
+
+    return fixtures
+
+
 @app.route("/")
 def home():
     import os, random
@@ -907,6 +942,7 @@ def home():
     fixtures.sort(
         key=parse_match
     )
+    enrich_fixture_tags(fixtures)
     device = request.cookies.get("kcl_user")
     if not device:
         device = str(uuid.uuid4())
